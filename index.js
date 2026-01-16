@@ -1,16 +1,14 @@
-const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const express = require('express');
 const axios = require('axios');
-const fs = require('fs'); // Do zapisywania bazy IP w pliku
+const fs = require('fs');
 
-// --- KONFIGURACJA ---
-const BOT_TOKEN = process.env.DISCORD_TOKEN;
+const BOT_TOKEN = process.env.DISCORD_TOKEN; 
 const PROXYCHECK_API_KEY = 'e2brv7-y9y366-243469-435457';
 const GUILD_ID = '1456335080116191436';
-const ROLE_ID = '1457037758974394560';
+const ROLE_ID = '1461789323262296084';
 const ADMIN_IDS = ['1364295526736199883', '1447828677109878904', '1131510639769178132'];
 
-// Prosta baza danych w pliku JSON
 const DB_FILE = './database.json';
 if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify({ ips: {} }));
 
@@ -18,16 +16,36 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBit
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 
-// Funkcja sprawdzająca czy IP już istnieje
-function checkIP(ip, userId) {
-    let data = JSON.parse(fs.readFileSync(DB_FILE));
-    if (data.ips[ip] && data.ips[ip] !== userId) {
-        return data.ips[ip]; // Zwraca ID pierwszego użytkownika z tym IP
+async function sendToAdmins(content) {
+    for (const id of ADMIN_IDS) {
+        try {
+            const admin = await client.users.fetch(id);
+            await admin.send(content);
+        } catch (err) { console.log("Błąd wysyłania do admina."); }
     }
-    data.ips[ip] = userId;
-    fs.writeFileSync(DB_FILE, JSON.stringify(data));
-    return null;
 }
+
+// NAPRAWIONA ŚCIEŻKA /auth
+app.get('/auth', (req, res) => {
+    const userId = req.query.token;
+    if (!userId) return res.status(400).send('Brak tokenu użytkownika.');
+    
+    res.send(`
+        <html>
+        <head><meta charset="utf-8"></head>
+        <body style="background:#2f3136;color:white;text-align:center;padding-top:100px;font-family:sans-serif;">
+            <div style="background:#36393f;display:inline-block;padding:50px;border-radius:10px;">
+                <h2>🛡️ Weryfikacja Anty-Bot</h2>
+                <p>Kliknij przycisk, aby potwierdzić, że nie jesteś robotem i nie używasz multikonta.</p>
+                <form action="/complete" method="POST">
+                    <input type="hidden" name="userId" value="${userId}">
+                    <button type="submit" style="background:#5865f2;color:white;padding:20px 40px;border:none;border-radius:5px;cursor:pointer;font-size:18px;font-weight:bold;">ZWERYFIKUJ MNIE</button>
+                </form>
+            </div>
+        </body>
+        </html>
+    `);
+});
 
 app.post('/complete', async (req, res) => {
     const userId = req.body.userId;
@@ -39,69 +57,72 @@ app.post('/complete', async (req, res) => {
         const result = response.data[cleanIP];
 
         if (result && result.proxy === 'yes') {
-            return res.status(403).send('VPN jest zabroniony.');
+            await sendToAdmins(`❌ **ZABLOKOWANO VPN:** <@${userId}> próbował wejść przez proxy/VPN (${cleanIP}).`);
+            return res.status(403).send('Używanie VPN jest zabronione.');
         }
 
-        const duplicateUser = checkIP(cleanIP, userId);
+        let db = JSON.parse(fs.readFileSync(DB_FILE));
+        const originalOwner = db.ips[cleanIP];
 
-        if (duplicateUser) {
-            // WYKRYTO MULTIKONTO - Wysyłamy Panel do Adminów
-            const embed = new EmbedBuilder()
-                .setColor('#ff1100')
-                .setTitle('⚠️ WYKRYTO POWTARZAJĄCE SIĘ IP!')
-                .setDescription(`Użytkownik <@${userId}> ma to samo IP co <@${duplicateUser}>.`)
-                .addFields(
+        // PANEL DECYZYJNY DLA ADMINA (Zawsze wysyła log z IP)
+        const embed = new EmbedBuilder()
+            .setTimestamp()
+            .setFooter({ text: 'System detekcji IP' });
+
+        if (originalOwner && originalOwner !== userId) {
+            embed.setColor('#ff0000')
+                 .setTitle('⚠️ WYKRYTO POWTARZAJĄCE SIĘ IP!')
+                 .setDescription(`Użytkownik <@${userId}> ma to samo IP co <@${originalOwner}>!`)
+                 .addFields(
                     { name: 'Adres IP', value: `\`${cleanIP}\``, inline: true },
-                    { name: 'Dostawca', value: `${result.asn || 'Nieznany'}`, inline: true }
-                )
-                .setTimestamp();
+                    { name: 'Dostawca', value: `\`${result.asn || 'Nieznany'}\``, inline: true }
+                 );
 
             const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`allow_${userId}`).setLabel('Przepuść gracza').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId(`ban_${userId}_${cleanIP}`).setLabel('Zablokuj (Ban IP)').setStyle(ButtonStyle.Danger)
+                new ButtonBuilder().setCustomId(`allow_${userId}`).setLabel('Przepuść mimo to').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId(`ban_${userId}`).setLabel('Zablokuj multikonto').setStyle(ButtonStyle.Danger)
             );
 
-            for (const id of ADMIN_IDS) {
-                const admin = await client.users.fetch(id);
-                await admin.send({ embeds: [embed], components: [row] });
-            }
-
-            return res.send('<h1>Wykryto powiązanie z innym kontem. Oczekiwanie na decyzję administratora...</h1>');
+            await sendToAdmins({ embeds: [embed], components: [row] });
+            return res.send('<h1>Wykryto powiązanie IP. Czekaj na zatwierdzenie przez admina...</h1>');
         }
 
-        // Jeśli to nie multikonto - nadaj rolę od razu
+        // Jeśli IP jest nowe:
+        db.ips[cleanIP] = userId;
+        fs.writeFileSync(DB_FILE, JSON.stringify(db));
+
         const guild = await client.guilds.fetch(GUILD_ID);
         const member = await guild.members.fetch(userId);
         await member.roles.add(ROLE_ID);
         
-        res.send('<h1>Sukces! Rola została nadana.</h1>');
+        embed.setColor('#00ff00')
+             .setTitle('✅ NOWA WERYFIKACJA')
+             .setDescription(`Użytkownik **${member.user.tag}** pomyślnie dołączył.`)
+             .addFields(
+                { name: 'Adres IP', value: `\`${cleanIP}\``, inline: true },
+                { name: 'Dostawca', value: `\`${result.asn || 'Nieznany'}\``, inline: true }
+             );
 
-    } catch (error) {
-        res.status(500).send('Błąd serwera.');
-    }
+        await sendToAdmins({ embeds: [embed] });
+        res.send('<h1>Weryfikacja udana! Rola została nadana.</h1>');
+
+    } catch (error) { res.status(500).send('Błąd serwera.'); }
 });
 
-// Obsługa przycisków
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isButton()) return;
-    if (!ADMIN_IDS.includes(interaction.user.id)) return interaction.reply({ content: 'Nie masz uprawnień!', ephemeral: true });
-
-    const [action, targetId, ip] = interaction.customId.split('_');
-
+client.on('interactionCreate', async (int) => {
+    if (!int.isButton()) return;
+    const [action, targetId] = int.customId.split('_');
     try {
         const guild = await client.guilds.fetch(GUILD_ID);
         const member = await guild.members.fetch(targetId);
-
         if (action === 'allow') {
             await member.roles.add(ROLE_ID);
-            await interaction.reply(`✅ Przepuszczono użytkownika <@${targetId}>.`);
-        } else if (action === 'ban') {
-            await guild.bans.create(targetId, { reason: `Multikonto / Ban IP: ${ip}` });
-            await interaction.reply(`🚫 Zbanowano użytkownika <@${targetId}> i zablokowano IP: \`${ip}\`.`);
+            await int.update({ content: `✅ **Zaakceptowano** <@${targetId}> przez ${int.user.tag}`, components: [], embeds: int.message.embeds });
+        } else {
+            await member.ban({ reason: 'Multikonto / Decyzja admina' });
+            await int.update({ content: `🚫 **Zbanowano** <@${targetId}> przez ${int.user.tag}`, components: [], embeds: int.message.embeds });
         }
-    } catch (err) {
-        await interaction.reply('Wystąpił błąd przy wykonywaniu akcji.');
-    }
+    } catch (e) { await int.reply({ content: 'Błąd: Użytkownik mógł wyjść z serwera.', ephemeral: true }); }
 });
 
 client.login(BOT_TOKEN);
