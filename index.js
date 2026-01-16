@@ -5,7 +5,7 @@ const axios = require('axios');
 const BOT_TOKEN = process.env.DISCORD_TOKEN; // TYLKO TO! Nie wklejaj tu ciągu znaków.
 const PROXYCHECK_API_KEY = 'e2brv7-y9y366-243469-435457';
 const GUILD_ID = '1456335080116191436';
-const ROLE_ID = '1461789323262296084';
+const ROLE_ID = '1457037758974394560';
 const ADMIN_IDS = ['1364295526736199883', '1447828677109878904', '1131510639769178132']; 
 const DOMAIN = 'https://kk-7stm.onrender.com';
 
