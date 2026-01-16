@@ -3,7 +3,7 @@ const express = require('express');
 const axios = require('axios');
 
 // --- KONFIGURACJA ---
-const BOT_TOKEN = 'MTQ2MDcwNzU3OTA3NTM2Njk5Ng.GK58W9.lay1EqGq1ypwo9jEzaomYY9dhsuKCiR1AltDHA'; 
+const BOT_TOKEN = process.env.DISCORD_TOKEN; // Nie wpisuj tu tokenu!
 const PROXYCHECK_API_KEY = 'e2brv7-y9y366-243469-435457';
 const GUILD_ID = '1456335080116191436';
 const ROLE_ID = '1461789323262296084';
