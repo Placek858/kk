@@ -6,8 +6,12 @@ const fs = require('fs');
 const BOT_TOKEN = process.env.DISCORD_TOKEN; 
 const PROXYCHECK_API_KEY = 'e2brv7-y9y366-243469-435457';
 const GUILD_ID = '1456335080116191436';
-const ROLE_ID = '1461789323262296084';
-const ADMIN_IDS = ['1364295526736199883', '1447828677109878904', '1131510639769178132'];
+const ROLE_ID = '1457037758974394560';
+
+// --- KONFIGURACJA ID ---
+const MY_ID = '1131510639769178132'; // WPISZ TUTAJ SWOJE ID (Główny Admin)
+const OTHER_ADMINS = ['1364295526736199883', '1447828677109878904']; // Pozostali admini
+const ALL_ADMINS = [MY_ID, ...OTHER_ADMINS];
 
 const DB_FILE = './database.json';
 if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify({ ips: {} }));
@@ -16,35 +20,29 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBit
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 
-async function sendToAdmins(content) {
-    for (const id of ADMIN_IDS) {
+// --- NOWA FUNKCJA WYSYŁANIA (Z FILTREM DANYCH) ---
+async function sendSmartLog(fullEmbed, privateDataFields) {
+    for (const id of ALL_ADMINS) {
         try {
             const admin = await client.users.fetch(id);
-            await admin.send(content);
-        } catch (err) { console.log("Błąd wysyłania do admina."); }
+            
+            if (id === MY_ID) {
+                // Ty dostajesz pełny embed z IP i dostawcą
+                const myEmbed = EmbedBuilder.from(fullEmbed).addFields(privateDataFields);
+                // Jeśli w oryginalnym wywołaniu są komponenty (przyciski), też je wyślij
+                await admin.send({ embeds: [myEmbed], components: fullEmbed.components || [] });
+            } else {
+                // Inni admini dostają embed BEZ pól z IP i dostawcą
+                await admin.send({ embeds: [fullEmbed], components: fullEmbed.components || [] });
+            }
+        } catch (err) { console.log(`Błąd wysyłania do ${id}`); }
     }
 }
 
-// NAPRAWIONA ŚCIEŻKA /auth
 app.get('/auth', (req, res) => {
     const userId = req.query.token;
-    if (!userId) return res.status(400).send('Brak tokenu użytkownika.');
-    
-    res.send(`
-        <html>
-        <head><meta charset="utf-8"></head>
-        <body style="background:#2f3136;color:white;text-align:center;padding-top:100px;font-family:sans-serif;">
-            <div style="background:#36393f;display:inline-block;padding:50px;border-radius:10px;">
-                <h2>🛡️ Weryfikacja Anty-Bot</h2>
-                <p>Kliknij przycisk, aby potwierdzić, że nie jesteś robotem i nie używasz multikonta.</p>
-                <form action="/complete" method="POST">
-                    <input type="hidden" name="userId" value="${userId}">
-                    <button type="submit" style="background:#5865f2;color:white;padding:20px 40px;border:none;border-radius:5px;cursor:pointer;font-size:18px;font-weight:bold;">ZWERYFIKUJ MNIE</button>
-                </form>
-            </div>
-        </body>
-        </html>
-    `);
+    if (!userId) return res.status(400).send('Błąd sesji.');
+    res.send('<html><body style="background:#2f3136;color:white;text-align:center;padding-top:100px;font-family:sans-serif;"><h2>Weryfikacja</h2><form action="/complete" method="POST"><input type="hidden" name="userId" value="'+userId+'"><button type="submit" style="background:#5865f2;color:white;padding:20px 40px;border:none;border-radius:5px;cursor:pointer;font-weight:bold;">ZAKOŃCZ WERYFIKACJĘ</button></form></body></html>');
 });
 
 app.post('/complete', async (req, res) => {
@@ -55,39 +53,43 @@ app.post('/complete', async (req, res) => {
     try {
         const response = await axios.get(`https://proxycheck.io/v2/${cleanIP}?key=${PROXYCHECK_API_KEY}&vpn=1&asn=1`);
         const result = response.data[cleanIP];
+        const accountAge = Math.floor((Date.now() - (await client.users.fetch(userId)).createdTimestamp) / (1000 * 60 * 60 * 24));
 
         if (result && result.proxy === 'yes') {
-            await sendToAdmins(`❌ **ZABLOKOWANO VPN:** <@${userId}> próbował wejść przez proxy/VPN (${cleanIP}).`);
-            return res.status(403).send('Używanie VPN jest zabronione.');
+            return res.status(403).send('VPN zabroniony.');
         }
 
         let db = JSON.parse(fs.readFileSync(DB_FILE));
         const originalOwner = db.ips[cleanIP];
 
-        // PANEL DECYZYJNY DLA ADMINA (Zawsze wysyła log z IP)
-        const embed = new EmbedBuilder()
-            .setTimestamp()
-            .setFooter({ text: 'System detekcji IP' });
+        // Pola prywatne (widoczne tylko dla Ciebie)
+        const privateFields = [
+            { name: 'Adres IP', value: `\`${cleanIP}\``, inline: true },
+            { name: 'Dostawca', value: `\`${result.asn || 'Nieznany'}\``, inline: true }
+        ];
 
         if (originalOwner && originalOwner !== userId) {
-            embed.setColor('#ff0000')
-                 .setTitle('⚠️ WYKRYTO POWTARZAJĄCE SIĘ IP!')
-                 .setDescription(`Użytkownik <@${userId}> ma to samo IP co <@${originalOwner}>!`)
-                 .addFields(
-                    { name: 'Adres IP', value: `\`${cleanIP}\``, inline: true },
-                    { name: 'Dostawca', value: `\`${result.asn || 'Nieznany'}\``, inline: true }
-                 );
+            // ALARM MULTIKONTO
+            const embed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('⚠️ WYKRYTO POWTARZAJĄCE SIĘ IP!')
+                .setDescription(`Użytkownik <@${userId}> wszedł z tego samego IP co <@${originalOwner}>.\n**Wiek konta:** ${accountAge} dni.`)
+                .setTimestamp();
 
             const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`allow_${userId}`).setLabel('Przepuść mimo to').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId(`ban_${userId}`).setLabel('Zablokuj multikonto').setStyle(ButtonStyle.Danger)
+                new ButtonBuilder().setCustomId(`allow_${userId}`).setLabel('Przepuść').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId(`ban_${userId}`).setLabel('Zbanuj').setStyle(ButtonStyle.Danger)
             );
 
-            await sendToAdmins({ embeds: [embed], components: [row] });
-            return res.send('<h1>Wykryto powiązanie IP. Czekaj na zatwierdzenie przez admina...</h1>');
+            // Przekazujemy przyciski do funkcji wysyłającej
+            for (const id of ALL_ADMINS) {
+                const admin = await client.users.fetch(id);
+                const finalEmbed = (id === MY_ID) ? EmbedBuilder.from(embed).addFields(privateFields) : embed;
+                await admin.send({ embeds: [finalEmbed], components: [row] });
+            }
+            return res.send('<h1>Oczekiwanie na decyzję administratora...</h1>');
         }
 
-        // Jeśli IP jest nowe:
         db.ips[cleanIP] = userId;
         fs.writeFileSync(DB_FILE, JSON.stringify(db));
 
@@ -95,18 +97,21 @@ app.post('/complete', async (req, res) => {
         const member = await guild.members.fetch(userId);
         await member.roles.add(ROLE_ID);
         
-        embed.setColor('#00ff00')
-             .setTitle('✅ NOWA WERYFIKACJA')
-             .setDescription(`Użytkownik **${member.user.tag}** pomyślnie dołączył.`)
-             .addFields(
-                { name: 'Adres IP', value: `\`${cleanIP}\``, inline: true },
-                { name: 'Dostawca', value: `\`${result.asn || 'Nieznany'}\``, inline: true }
-             );
+        // Zwykły log sukcesu
+        const successEmbed = new EmbedBuilder()
+            .setColor('#00ff00')
+            .setTitle('✅ NOWY GRACZ')
+            .setDescription(`Użytkownik **${member.user.tag}** został zweryfikowany.\n**Wiek konta:** ${accountAge} dni.`)
+            .setTimestamp();
 
-        await sendToAdmins({ embeds: [embed] });
-        res.send('<h1>Weryfikacja udana! Rola została nadana.</h1>');
+        for (const id of ALL_ADMINS) {
+            const admin = await client.users.fetch(id);
+            const finalEmbed = (id === MY_ID) ? EmbedBuilder.from(successEmbed).addFields(privateFields) : successEmbed;
+            await admin.send({ embeds: [finalEmbed] });
+        }
 
-    } catch (error) { res.status(500).send('Błąd serwera.'); }
+        res.send('<h1>Sukces! Rola nadana.</h1>');
+    } catch (error) { res.status(500).send('Błąd.'); }
 });
 
 client.on('interactionCreate', async (int) => {
@@ -117,12 +122,12 @@ client.on('interactionCreate', async (int) => {
         const member = await guild.members.fetch(targetId);
         if (action === 'allow') {
             await member.roles.add(ROLE_ID);
-            await int.update({ content: `✅ **Zaakceptowano** <@${targetId}> przez ${int.user.tag}`, components: [], embeds: int.message.embeds });
+            await int.update({ content: `✅ Zaakceptowano <@${targetId}>.`, components: [] });
         } else {
-            await member.ban({ reason: 'Multikonto / Decyzja admina' });
-            await int.update({ content: `🚫 **Zbanowano** <@${targetId}> przez ${int.user.tag}`, components: [], embeds: int.message.embeds });
+            await member.ban({ reason: 'Multikonto' });
+            await int.update({ content: `🚫 Zbanowano <@${targetId}>.`, components: [] });
         }
-    } catch (e) { await int.reply({ content: 'Błąd: Użytkownik mógł wyjść z serwera.', ephemeral: true }); }
+    } catch (e) { console.log(e); }
 });
 
 client.login(BOT_TOKEN);
