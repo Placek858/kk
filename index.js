@@ -23,11 +23,36 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBit
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 
+// --- FUNKCJA WYSYŁAJĄCA LOGI NA PV DO ADMINÓW ---
+async function sendAdminLogs(targetId, ip, country, type, adminTag = null) {
+    const guild = await client.guilds.fetch(GUILD_ID);
+    
+    // Embed dla Ciebie (Z IP)
+    const myLog = new EmbedBuilder()
+        .setColor(type.includes('RĘCZNA') ? '#43b581' : '#5865f2')
+        .setTitle(`📢 LOG WERYFIKACJI: ${type}`)
+        .setDescription(`**Użytkownik:** <@${targetId}>\n**Kraj:** ${country}\n**IP:** \`${ip}\`${adminTag ? `\n**Admin:** ${adminTag}` : ''}`)
+        .setTimestamp();
+
+    // Embed dla Adminów (BEZ IP)
+    const adminLog = new EmbedBuilder()
+        .setColor(type.includes('RĘCZNA') ? '#43b581' : '#5865f2')
+        .setTitle(`📢 LOG WERYFIKACJI: ${type}`)
+        .setDescription(`**Użytkownik:** <@${targetId}>\n**Kraj:** ${country}\n**IP:** \`UKRYTE\`${adminTag ? `\n**Admin:** ${adminTag}` : ''}`)
+        .setTimestamp();
+
+    for (const id of ALL_ADMINS) {
+        try {
+            const admin = await client.users.fetch(id);
+            const embedToSend = (id === MY_ID) ? myLog : adminLog;
+            await admin.send({ embeds: [embedToSend] });
+        } catch (e) { console.log(`Nie można wysłać loga do admina ${id}`); }
+    }
+}
+
 // --- AKTUALIZACJA STATUSU ---
 async function updateLiveStatus(targetId, newStatus, actionText) {
-    console.log(`Zmieniam status dla ${targetId} na: ${newStatus}`);
     await RequestTracker.findOneAndUpdate({ userId: targetId }, { status: newStatus }, { upsert: true });
-    
     const panel = await PanelTracker.findOne({ targetId });
     if (!panel) return;
 
@@ -36,7 +61,7 @@ async function updateLiveStatus(targetId, newStatus, actionText) {
             const admin = await client.users.fetch(entry.adminId);
             const message = await admin.dmChannel.messages.fetch(entry.messageId);
             await message.edit({ content: `**ZAKOŃCZONO:** ${actionText}`, components: [] });
-        } catch (e) { console.log("Nie udało się edytować wiadomości u admina."); }
+        } catch (e) { console.log("Błąd edycji panelu."); }
     }
     await PanelTracker.deleteOne({ targetId });
 }
@@ -51,163 +76,47 @@ app.get('/auth', (req, res) => {
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <title>Weryfikacja Konta</title>
             <style>
-                :root {
-                    --discord-blurple: #5865f2;
-                    --success: #43b581;
-                    --warning: #faa61a;
-                    --danger: #f04747;
-                    --text: #ffffff;
-                }
-
-                body { 
-                    margin: 0;
-                    padding: 0;
-                    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    height: 100vh;
-                    overflow: hidden;
-                    /* Animowany Gradient w tle */
-                    background: linear-gradient(-45deg, #0f0c29, #302b63, #24243e, #1a1a2e);
-                    background-size: 400% 400%;
-                    animation: gradientBG 12s ease infinite;
-                }
-
-                @keyframes gradientBG {
-                    0% { background-position: 0% 50%; }
-                    50% { background-position: 100% 50%; }
-                    100% { background-position: 0% 50%; }
-                }
-
-                .box { 
-                    background: rgba(44, 47, 51, 0.7); /* Szklany efekt */
-                    backdrop-filter: blur(12px);
-                    -webkit-backdrop-filter: blur(12px);
-                    padding: 60px 40px; 
-                    border-radius: 24px; 
-                    box-shadow: 0 20px 50px rgba(0,0,0,0.5); 
-                    max-width: 420px;
-                    width: 85%;
-                    text-align: center;
-                    border: 1px solid rgba(255,255,255,0.1);
-                    transform: translateY(0);
-                    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-                }
-
-                h2 { margin: 0 0 10px 0; font-size: 32px; color: white; letter-spacing: 1px; }
-                p { color: #dcddde; margin-bottom: 35px; line-height: 1.6; font-size: 16px; }
-
-                button { 
-                    background: var(--discord-blurple); 
-                    color: white; 
-                    padding: 18px 0; 
-                    border: none; 
-                    border-radius: 12px; 
-                    cursor: pointer; 
-                    font-weight: 800; 
-                    font-size: 16px;
-                    width: 100%;
-                    text-transform: uppercase;
-                    letter-spacing: 1.5px;
-                    transition: all 0.3s ease;
-                    box-shadow: 0 8px 20px rgba(88, 101, 242, 0.4);
-                }
-
-                button:hover { 
-                    background: #4752c4; 
-                    transform: translateY(-3px);
-                    box-shadow: 0 12px 25px rgba(88, 101, 242, 0.5);
-                }
-
-                button:active { transform: translateY(-1px); }
-
-                .spinner {
-                    width: 60px;
-                    height: 60px;
-                    border: 6px solid rgba(255,255,255,0.1);
-                    border-top: 6px solid var(--discord-blurple);
-                    border-radius: 50%;
-                    animation: spin 1s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
-                    margin: 20px auto;
-                }
-
+                :root { --discord-blurple: #5865f2; --success: #43b581; --warning: #faa61a; --danger: #f04747; }
+                body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: linear-gradient(-45deg, #0f0c29, #302b63, #24243e, #1a1a2e); background-size: 400% 400%; animation: gradientBG 12s ease infinite; }
+                @keyframes gradientBG { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+                .box { background: rgba(44, 47, 51, 0.7); backdrop-filter: blur(12px); padding: 60px 40px; border-radius: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); max-width: 420px; width: 85%; text-align: center; border: 1px solid rgba(255,255,255,0.1); }
+                h2 { margin: 0; font-size: 32px; color: white; }
+                p { color: #dcddde; margin-bottom: 35px; }
+                button { background: var(--discord-blurple); color: white; padding: 18px 0; border: none; border-radius: 12px; cursor: pointer; font-weight: 800; width: 100%; transition: 0.3s; }
+                button:hover { background: #4752c4; transform: translateY(-3px); }
+                .spinner { width: 50px; height: 50px; border: 5px solid rgba(255,255,255,0.1); border-top: 5px solid white; border-radius: 50%; animation: spin 1s linear infinite; margin: 20px auto; }
                 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-                .status-icon { font-size: 70px; margin-bottom: 25px; display: block; filter: drop-shadow(0 0 15px rgba(255,255,255,0.2)); }
-                
-                .footer-text { font-size: 12px; color: rgba(255,255,255,0.3); margin-top: 30px; text-transform: uppercase; }
             </style>
         </head>
         <body>
             <div class="box">
                 <div id="content">
-                    <span class="status-icon">🛡️</span>
+                    <h2 style="font-size: 60px;">🛡️</h2>
                     <h2>WERYFIKACJA</h2>
-                    <p>Potwierdź swoją tożsamość, aby odblokować dostęp do kanałów serwera.</p>
-                    <button id="vBtn">ROZPOCZNIJ TERAZ</button>
-                    <div class="footer-text">Protected by Discord Guard</div>
+                    <p>Potwierdź swoją tożsamość, aby odblokować dostęp.</p>
+                    <button id="vBtn">ROZPOCZNIJ</button>
                 </div>
             </div>
-
             <script>
-                const content = document.getElementById('content');
                 document.getElementById('vBtn').onclick = async () => {
-                    content.innerHTML = '<div class="spinner"></div><h3 style="margin-top:20px">ANALIZA POŁĄCZENIA...</h3>';
-                    
-                    const r = await fetch('/complete', { 
-                        method: 'POST', 
-                        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                        body: 'userId=${userId}' 
-                    });
+                    document.getElementById('content').innerHTML = '<div class="spinner"></div><h3 style="color:white">ANALIZA...</h3>';
+                    const r = await fetch('/complete', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'userId=${userId}' });
                     const d = await r.json();
-
                     if (d.action === 'wait') {
-                        content.innerHTML = \`
-                            <span class="status-icon">⏳</span>
-                            <h3 style="color:var(--warning); font-size:24px">RĘCZNA KONTROLA</h3>
-                            <p>Twoje połączenie wzbudziło czujność systemu. Administrator musi Cię zaakceptować ręcznie. <br><br><b>Nie zamykaj tej karty!</b></p>
-                        \`;
+                        document.getElementById('content').innerHTML = '<h3>⏳ RĘCZNA KONTROLA</h3><p style="color:white">Twoje połączenie wymaga akceptacji admina. Nie zamykaj tej karty.</p>';
                         startPolling('${userId}');
                     } else if (d.action === 'success') {
-                        showSuccess();
+                        document.getElementById('content').innerHTML = '<h2 style="color:#43b581">✅ SUKCES!</h2><p style="color:white">Możesz wrócić na Discorda.</p>';
                     } else {
-                        content.innerHTML = \`
-                            <span class="status-icon">❌</span>
-                            <h3 style="color:var(--danger)">ODMOWA DOSTĘPU</h3>
-                            <p>\${d.msg}</p>
-                            <button onclick="location.reload()">SPRÓBUJ PONOWNIE</button>
-                        \`;
+                        document.getElementById('content').innerHTML = '<h2 style="color:#f04747">❌ BŁĄD</h2><p style="color:white">' + d.msg + '</p>';
                     }
                 };
-
-                function showSuccess() {
-                    content.innerHTML = \`
-                        <span class="status-icon">✅</span>
-                        <h2 style="color:var(--success)">SUKCES!</h2>
-                        <p>Weryfikacja zakończona pomyślnie. Twoja rola została nadana automatycznie.</p>
-                        <div class="footer-text">Możesz już wrócić na Discorda</div>
-                    \`;
-                }
-
                 function startPolling(uid) {
-                    const timer = setInterval(async () => {
-                        try {
-                            const check = await fetch('/status?userId=' + uid);
-                            const s = await check.json();
-                            if (s.status === 'allowed') {
-                                clearInterval(timer);
-                                showSuccess();
-                            } else if (s.status === 'banned') {
-                                clearInterval(timer);
-                                content.innerHTML = \`
-                                    <span class="status-icon">🚫</span>
-                                    <h3 style="color:var(--danger)">ZABLOKOWANO</h3>
-                                    <p>Administrator odrzucił Twoją prośbę o wejście na serwer.</p>
-                                \`;
-                            }
-                        } catch (e) {}
-                    }, 2500);
+                    setInterval(async () => {
+                        const r = await fetch('/status?userId=' + uid);
+                        const s = await r.json();
+                        if (s.status === 'allowed') location.reload();
+                    }, 3000);
                 }
             </script>
         </body>
@@ -215,10 +124,9 @@ app.get('/auth', (req, res) => {
     `);
 });
 
-// --- API STATUSU ---
+// --- API ---
 app.get('/status', async (req, res) => {
-    const userId = req.query.userId;
-    const track = await RequestTracker.findOne({ userId });
+    const track = await RequestTracker.findOne({ userId: req.query.userId });
     res.set('Access-Control-Allow-Origin', '*');
     res.json({ status: track ? track.status : 'pending' });
 });
@@ -238,12 +146,16 @@ app.post('/complete', async (req, res) => {
         const isForeign = country !== 'PL'; 
         const isMulticount = existingEntry && existingEntry.userId !== userId;
 
-        if (isVPN) return res.json({ action: 'error', msg: 'Używanie VPN jest surowo zabronione.' });
+        if (isVPN) return res.json({ action: 'error', msg: 'Używanie VPN jest zabronione.' });
 
         if (isMulticount || isForeign) {
             await RequestTracker.findOneAndUpdate({ userId }, { status: 'pending' }, { upsert: true });
             
-            const embed = new EmbedBuilder().setColor('#ffaa00').setTitle('⚠️ WYKRYTO PODEJRZANE IP').setDescription(`Użytkownik: <@${userId}>\nKraj: **${country}**\nIP: \`${cleanIP}\`\nPowód: **${isForeign ? 'Zagraniczne IP' : 'Podejrzenie Multikonta'}**`);
+            // Embed dla Ciebie (Z IP)
+            const myEmbed = new EmbedBuilder().setColor('#ffaa00').setTitle('⚠️ PODEJRZANE IP (TY)').setDescription(`Użytkownik: <@${userId}>\nKraj: ${country}\nIP: \`${cleanIP}\`\nPowód: ${isForeign ? 'Zagranica' : 'Multikonto'}`);
+            // Embed dla Adminów (BEZ IP)
+            const adminEmbed = new EmbedBuilder().setColor('#ffaa00').setTitle('⚠️ PODEJRZANE IP').setDescription(`Użytkownik: <@${userId}>\nKraj: ${country}\nIP: \`UKRYTE\`\nPowód: ${isForeign ? 'Zagranica' : 'Multikonto'}`);
+
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId(`allow_${userId}_${cleanIP}_${country}`).setLabel('Przepuść').setStyle(ButtonStyle.Success),
                 new ButtonBuilder().setCustomId(`ban_${userId}`).setLabel('Zablokuj').setStyle(ButtonStyle.Danger)
@@ -253,20 +165,25 @@ app.post('/complete', async (req, res) => {
             for (const id of ALL_ADMINS) {
                 try {
                     const admin = await client.users.fetch(id);
-                    const msg = await admin.send({ embeds: [embed], components: [row] });
+                    const msg = await admin.send({ embeds: [(id === MY_ID) ? myEmbed : adminEmbed], components: [row] });
                     adminMsgs.push({ adminId: id, messageId: msg.id });
-                } catch(err) { console.log(`Nie można wysłać DM do admina ${id}`); }
+                } catch(err) {}
             }
             await new PanelTracker({ targetId: userId, adminMessages: adminMsgs }).save();
             return res.json({ action: 'wait' });
         }
 
+        // --- AUTOMATYCZNY SUKCES ---
         await new UserIP({ userId, ip: cleanIP, country }).save();
         const guild = await client.guilds.fetch(GUILD_ID);
         const member = await guild.members.fetch(userId);
         await member.roles.add(ROLE_ID);
+        
+        // Logi na PV dla Ciebie i Adminów (z rozróżnieniem IP)
+        await sendAdminLogs(userId, cleanIP, country, "AUTOMATYCZNA");
+
         res.json({ action: 'success' });
-    } catch (e) { res.json({ action: 'error', msg: 'Wystąpił błąd podczas sprawdzania IP.' }); }
+    } catch (e) { res.json({ action: 'error', msg: 'Błąd połączenia.' }); }
 });
 
 client.on('interactionCreate', async (int) => {
@@ -279,17 +196,28 @@ client.on('interactionCreate', async (int) => {
             const member = await guild.members.fetch(targetId);
             await member.roles.add(ROLE_ID);
             if (ip) await UserIP.findOneAndUpdate({ userId: targetId }, { ip, country }, { upsert: true });
-            await updateLiveStatus(targetId, 'allowed', `✅ Zaakceptowano przez **${int.user.tag}**`);
-            await int.reply({ content: `Użytkownik <@${targetId}> został wpuszczony.`, ephemeral: true });
+            await updateLiveStatus(targetId, 'allowed', `✅ Zaakceptowano przez ${int.user.tag}`);
+            
+            // Logi na PV dla Ciebie i Adminów po ręcznej akceptacji
+            await sendAdminLogs(targetId, ip, country, "RĘCZNA AKCEPTACJA", int.user.tag);
+
+            // Embed powitalny dla użytkownika
+            const welcome = new EmbedBuilder()
+                .setColor('#43b581')
+                .setTitle('✅ Zostałeś zweryfikowany!')
+                .setDescription(`Witaj na **${guild.name}**! Uzyskałeś pełny dostęp do serwera.`)
+                .setTimestamp();
+            try { await member.send({ embeds: [welcome] }); } catch(e) {}
+
+            await int.reply({ content: `Użytkownik wpuszczony.`, ephemeral: true });
         } else {
             await guild.members.ban(targetId, { reason: 'Odrzucono weryfikację' });
-            await updateLiveStatus(targetId, 'banned', `🚫 Zbanowano przez **${int.user.tag}**`);
-            await int.reply({ content: `Użytkownik <@${targetId}> został zbanowany.`, ephemeral: true });
+            await updateLiveStatus(targetId, 'banned', `🚫 Zbanowano przez ${int.user.tag}`);
+            await int.reply({ content: `Użytkownik zbanowany.`, ephemeral: true });
         }
-    } catch (e) { console.log("Błąd przetwarzania przycisku."); }
+    } catch (e) { console.log("Błąd przycisku."); }
 });
 
-client.on('ready', () => { console.log(`🤖 Bot zalogowany jako ${client.user.tag}`); });
-
+client.on('ready', () => { console.log(`🤖 Bot online: ${client.user.tag}`); });
 client.login(BOT_TOKEN);
 app.listen(process.env.PORT || 3000);
