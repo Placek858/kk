@@ -15,7 +15,7 @@ const ALL_ADMINS = [MY_ID, '1364295526736199883', '1447828677109878904'];
 
 mongoose.connect(MONGO_URI).then(() => console.log("✅ Połączono z MongoDB Atlas"));
 
-const UserIP = mongoose.model('UserIP', new mongoose.Schema({ userId: String, ip: String, country: String }));
+const UserIP = mongoose.model('UserIP', new mongoose.Schema({ userId: String, ip: String, country: String, operator: String }));
 const PanelTracker = mongoose.model('PanelTracker', new mongoose.Schema({ targetId: String, adminMessages: [{ adminId: String, messageId: String }] }));
 const RequestTracker = mongoose.model('RequestTracker', new mongoose.Schema({ userId: String, status: { type: String, default: 'pending' } }));
 
@@ -32,25 +32,28 @@ const client = new Client({
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 
-// --- FUNKCJA WYSYŁAJĄCA LOGI NA PV ---
-async function sendAdminLogs(targetId, ip, country, type, adminTag = null) {
+// --- FUNKCJA WYSYŁAJĄCA LOGI NA PV (Z PODZIAŁEM NA DANE) ---
+async function sendAdminLogs(targetId, ip, country, operator, type, adminTag = null) {
+    // Embed dla Ciebie (Wszystkie dane)
     const myLog = new EmbedBuilder()
         .setColor(type.includes('RĘCZNA') ? '#43b581' : '#5865f2')
         .setTitle(`📢 LOG WERYFIKACJI: ${type}`)
-        .setDescription(`**Użytkownik:** <@${targetId}>\n**Kraj:** ${country}\n**IP:** \`${ip}\`${adminTag ? `\n**Admin:** ${adminTag}` : ''}`)
+        .setDescription(`**Użytkownik:** <@${targetId}>\n**Kraj:** ${country}\n**Operator:** \`${operator}\`\n**IP:** \`${ip}\`${adminTag ? `\n**Admin:** ${adminTag}` : ''}`)
         .setTimestamp();
 
+    // Embed dla Adminów (Dane ukryte)
     const adminLog = new EmbedBuilder()
         .setColor(type.includes('RĘCZNA') ? '#43b581' : '#5865f2')
         .setTitle(`📢 LOG WERYFIKACJI: ${type}`)
-        .setDescription(`**Użytkownik:** <@${targetId}>\n**Kraj:** ${country}\n**IP:** \`UKRYTE\`${adminTag ? `\n**Admin:** ${adminTag}` : ''}`)
+        .setDescription(`**Użytkownik:** <@${targetId}>\n**Kraj:** ${country}\n**Operator:** \`UKRYTE\`\n**IP:** \`UKRYTE\`${adminTag ? `\n**Admin:** ${adminTag}` : ''}`)
         .setTimestamp();
 
     for (const id of ALL_ADMINS) {
         try {
             const admin = await client.users.fetch(id);
-            await admin.send({ embeds: [(id === MY_ID) ? myLog : adminLog] });
-        } catch (e) { console.log(`Błąd wysyłania loga do ${id}`); }
+            const embedToSend = (id === MY_ID) ? myLog : adminLog;
+            await admin.send({ embeds: [embedToSend] });
+        } catch (e) { console.log(`Błąd logów dla ${id}`); }
     }
 }
 
@@ -88,8 +91,8 @@ app.get('/auth', (req, res) => {
         <body>
             <div class="box" id="content">
                 <h1>🛡️</h1><h2>Weryfikacja Konta</h2>
-                <p>Kliknij przycisk, aby potwierdzić tożsamość.</p>
-                <button id="vBtn">ZWERYFIKUJ</button>
+                <p>Potwierdź tożsamość, aby wejść na serwer.</p>
+                <button id="vBtn">ROZPOCZNIJ</button>
             </div>
             <script>
                 document.getElementById('vBtn').onclick = async () => {
@@ -97,7 +100,7 @@ app.get('/auth', (req, res) => {
                     const r = await fetch('/complete', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'userId=${userId}' });
                     const d = await r.json();
                     if (d.action === 'wait') {
-                        document.getElementById('content').innerHTML = '<h3>⏳ Oczekiwanie</h3><p>Admin musi Cię zaakceptować. Nie zamykaj karty.</p>';
+                        document.getElementById('content').innerHTML = '<h3>⏳ Oczekiwanie</h3><p>Twoje połączenie wymaga akceptacji admina.</p>';
                         setInterval(async () => {
                             const rs = await fetch('/status?userId=${userId}');
                             const s = await rs.json();
@@ -128,8 +131,10 @@ app.post('/complete', async (req, res) => {
         const response = await axios.get(`https://proxycheck.io/v2/${cleanIP}?key=${PROXYCHECK_API_KEY}&vpn=3&asn=1`);
         const result = response.data[cleanIP];
         const country = result.isocode || '??';
-        const existingEntry = await UserIP.findOne({ ip: cleanIP });
+        const operator = result.asn || 'Nieznany Operator';
         const isVPN = result.proxy === 'yes';
+        
+        const existingEntry = await UserIP.findOne({ ip: cleanIP });
         const isForeign = country !== 'PL'; 
         const isMulticount = existingEntry && existingEntry.userId !== userId;
 
@@ -137,12 +142,15 @@ app.post('/complete', async (req, res) => {
 
         if (isMulticount || isForeign) {
             await RequestTracker.findOneAndUpdate({ userId }, { status: 'pending' }, { upsert: true });
-            const myEmbed = new EmbedBuilder().setColor('#ffaa00').setTitle('⚠️ PODEJRZANE IP (TY)').setDescription(`Użytkownik: <@${userId}>\nKraj: ${country}\nIP: \`${cleanIP}\`\nPowód: ${isForeign ? 'Zagranica' : 'Multikonto'}`);
-            const adminEmbed = new EmbedBuilder().setColor('#ffaa00').setTitle('⚠️ PODEJRZANE IP').setDescription(`Użytkownik: <@${userId}>\nKraj: ${country}\nIP: \`UKRYTE\`\nPowód: ${isForeign ? 'Zagranica' : 'Multikonto'}`);
+            
+            const myEmbed = new EmbedBuilder().setColor('#ffaa00').setTitle('⚠️ PODEJRZANE IP (TY)').setDescription(`Użytkownik: <@${userId}>\nKraj: ${country}\nOperator: \`${operator}\`\nIP: \`${cleanIP}\`\nPowód: ${isForeign ? 'Zagranica' : 'Multikonto'}`);
+            const adminEmbed = new EmbedBuilder().setColor('#ffaa00').setTitle('⚠️ PODEJRZANE IP').setDescription(`Użytkownik: <@${userId}>\nKraj: ${country}\nOperator: \`UKRYTE\`\nIP: \`UKRYTE\`\nPowód: ${isForeign ? 'Zagranica' : 'Multikonto'}`);
+
             const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`allow_${userId}_${cleanIP}_${country}`).setLabel('Przepuść').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId(`allow_${userId}_${cleanIP}_${country}_${operator.replace(/ /g, '-')}`).setLabel('Przepuść').setStyle(ButtonStyle.Success),
                 new ButtonBuilder().setCustomId(`ban_${userId}`).setLabel('Zablokuj').setStyle(ButtonStyle.Danger)
             );
+
             const adminMsgs = [];
             for (const id of ALL_ADMINS) {
                 try {
@@ -155,11 +163,11 @@ app.post('/complete', async (req, res) => {
             return res.json({ action: 'wait' });
         }
 
-        await new UserIP({ userId, ip: cleanIP, country }).save();
+        await new UserIP({ userId, ip: cleanIP, country, operator }).save();
         const guild = await client.guilds.fetch(GUILD_ID);
         const member = await guild.members.fetch(userId);
         await member.roles.add(ROLE_ID);
-        await sendAdminLogs(userId, cleanIP, country, "AUTOMATYCZNA");
+        await sendAdminLogs(userId, cleanIP, country, operator, "AUTOMATYCZNA");
         res.json({ action: 'success' });
     } catch (e) { res.json({ action: 'error', msg: 'Błąd systemu.' }); }
 });
@@ -189,16 +197,17 @@ client.on('interactionCreate', async (int) => {
         return int.reply({ content: 'Kliknij przycisk poniżej, aby dokończyć weryfikację:', components: [row], ephemeral: true });
     }
 
-    const [action, targetId, ip, country] = int.customId.split('_');
+    const [action, targetId, ip, country, operatorRaw] = int.customId.split('_');
+    const operator = operatorRaw ? operatorRaw.replace(/-/g, ' ') : 'Nieznany';
     const guild = await client.guilds.fetch(GUILD_ID);
 
     try {
         if (action === 'allow') {
             const member = await guild.members.fetch(targetId);
             await member.roles.add(ROLE_ID);
-            if (ip) await UserIP.findOneAndUpdate({ userId: targetId }, { ip, country }, { upsert: true });
+            if (ip) await UserIP.findOneAndUpdate({ userId: targetId }, { ip, country, operator }, { upsert: true });
             await updateLiveStatus(targetId, 'allowed', `✅ Zaakceptowano przez ${int.user.tag}`);
-            await sendAdminLogs(targetId, ip, country, "RĘCZNA AKCEPTACJA", int.user.tag);
+            await sendAdminLogs(targetId, ip, country, operator, "RĘCZNA AKCEPTACJA", int.user.tag);
             try { await member.send({ content: `✅ Zostałeś zweryfikowany na **${guild.name}**!` }); } catch(e) {}
             await int.reply({ content: `Zaakceptowano.`, ephemeral: true });
         } else if (action === 'ban') {
