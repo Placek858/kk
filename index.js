@@ -59,7 +59,7 @@ app.get('/auth', (req, res) => {
             <div class="box">
                 <h2>🛡️ Weryfikacja Konta</h2>
                 <div id="content">
-                    <p>Potwierdź, że nie jesteś robotem i nie używasz VPN.</p>
+                    <p>Potwierdź, że nie jesteś robotem.</p>
                     <button id="vBtn">ROZPOCZNIJ WERYFIKACJĘ</button>
                 </div>
             </div>
