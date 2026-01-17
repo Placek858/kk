@@ -13,7 +13,7 @@ const ROLE_ID = '1461789323262296084';
 const MY_ID = '1131510639769178132'; 
 const ALL_ADMINS = [MY_ID, '1364295526736199883', '1447828677109878904'];
 
-mongoose.connect(MONGO_URI).then(() => console.log("✅ Połączono z MongoDB"));
+mongoose.connect(MONGO_URI).then(() => console.log("✅ Połączono z MongoDB Atlas"));
 
 const UserIP = mongoose.model('UserIP', new mongoose.Schema({ userId: String, ip: String, country: String }));
 const PanelTracker = mongoose.model('PanelTracker', new mongoose.Schema({ targetId: String, adminMessages: [{ adminId: String, messageId: String }] }));
@@ -49,10 +49,9 @@ app.get('/auth', (req, res) => {
         <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Weryfikacja Konta</title>
             <style>
                 :root {
-                    --bg-color: #23272a;
-                    --card-bg: #2c2f33;
                     --discord-blurple: #5865f2;
                     --success: #43b581;
                     --warning: #faa61a;
@@ -61,83 +60,100 @@ app.get('/auth', (req, res) => {
                 }
 
                 body { 
-                    background-color: var(--bg-color); 
-                    color: var(--text); 
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    margin: 0;
+                    padding: 0;
+                    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
                     display: flex;
                     justify-content: center;
                     align-items: center;
                     height: 100vh;
-                    margin: 0;
                     overflow: hidden;
+                    /* Animowany Gradient w tle */
+                    background: linear-gradient(-45deg, #0f0c29, #302b63, #24243e, #1a1a2e);
+                    background-size: 400% 400%;
+                    animation: gradientBG 12s ease infinite;
+                }
+
+                @keyframes gradientBG {
+                    0% { background-position: 0% 50%; }
+                    50% { background-position: 100% 50%; }
+                    100% { background-position: 0% 50%; }
                 }
 
                 .box { 
-                    background: var(--card-bg); 
-                    padding: 50px; 
-                    border-radius: 16px; 
-                    box-shadow: 0 10px 30px rgba(0,0,0,0.6); 
-                    max-width: 450px;
-                    width: 90%;
+                    background: rgba(44, 47, 51, 0.7); /* Szklany efekt */
+                    backdrop-filter: blur(12px);
+                    -webkit-backdrop-filter: blur(12px);
+                    padding: 60px 40px; 
+                    border-radius: 24px; 
+                    box-shadow: 0 20px 50px rgba(0,0,0,0.5); 
+                    max-width: 420px;
+                    width: 85%;
                     text-align: center;
-                    border: 1px solid rgba(255,255,255,0.05);
-                    transition: all 0.3s ease;
+                    border: 1px solid rgba(255,255,255,0.1);
+                    transform: translateY(0);
+                    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
                 }
 
-                h2 { margin-bottom: 10px; font-size: 28px; }
-                p { color: #b9bbbe; margin-bottom: 30px; line-height: 1.5; }
+                h2 { margin: 0 0 10px 0; font-size: 32px; color: white; letter-spacing: 1px; }
+                p { color: #dcddde; margin-bottom: 35px; line-height: 1.6; font-size: 16px; }
 
                 button { 
                     background: var(--discord-blurple); 
                     color: white; 
-                    padding: 16px 40px; 
+                    padding: 18px 0; 
                     border: none; 
-                    border-radius: 8px; 
+                    border-radius: 12px; 
                     cursor: pointer; 
-                    font-weight: bold; 
-                    font-size: 18px;
+                    font-weight: 800; 
+                    font-size: 16px;
                     width: 100%;
-                    transition: transform 0.2s, background 0.2s;
-                    box-shadow: 0 4px 15px rgba(88, 101, 242, 0.3);
+                    text-transform: uppercase;
+                    letter-spacing: 1.5px;
+                    transition: all 0.3s ease;
+                    box-shadow: 0 8px 20px rgba(88, 101, 242, 0.4);
                 }
 
                 button:hover { 
                     background: #4752c4; 
-                    transform: translateY(-2px);
+                    transform: translateY(-3px);
+                    box-shadow: 0 12px 25px rgba(88, 101, 242, 0.5);
                 }
 
-                button:active { transform: translateY(0); }
+                button:active { transform: translateY(-1px); }
 
-                /* Animacja ładowania */
                 .spinner {
-                    width: 50px;
-                    height: 50px;
-                    border: 5px solid rgba(255,255,255,0.1);
-                    border-top: 5px solid var(--discord-blurple);
+                    width: 60px;
+                    height: 60px;
+                    border: 6px solid rgba(255,255,255,0.1);
+                    border-top: 6px solid var(--discord-blurple);
                     border-radius: 50%;
-                    animation: spin 1s linear infinite;
+                    animation: spin 1s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
                     margin: 20px auto;
                 }
 
                 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-                .status-icon { font-size: 60px; margin-bottom: 20px; }
+                .status-icon { font-size: 70px; margin-bottom: 25px; display: block; filter: drop-shadow(0 0 15px rgba(255,255,255,0.2)); }
+                
+                .footer-text { font-size: 12px; color: rgba(255,255,255,0.3); margin-top: 30px; text-transform: uppercase; }
             </style>
         </head>
         <body>
             <div class="box">
                 <div id="content">
-                    <div class="status-icon">🛡️</div>
-                    <h2>Weryfikacja</h2>
-                    <p>Aby uzyskać dostęp do serwera, kliknij przycisk poniżej. Sprawdzimy czy nie używasz VPN.</p>
-                    <button id="vBtn">ZWERYFIKUJ MNIE</button>
+                    <span class="status-icon">🛡️</span>
+                    <h2>WERYFIKACJA</h2>
+                    <p>Potwierdź swoją tożsamość, aby odblokować dostęp do kanałów serwera.</p>
+                    <button id="vBtn">ROZPOCZNIJ TERAZ</button>
+                    <div class="footer-text">Protected by Discord Guard</div>
                 </div>
             </div>
 
             <script>
                 const content = document.getElementById('content');
                 document.getElementById('vBtn').onclick = async () => {
-                    content.innerHTML = '<div class="spinner"></div><h3>Analizowanie połączenia...</h3>';
+                    content.innerHTML = '<div class="spinner"></div><h3 style="margin-top:20px">ANALIZA POŁĄCZENIA...</h3>';
                     
                     const r = await fetch('/complete', { 
                         method: 'POST', 
@@ -148,28 +164,29 @@ app.get('/auth', (req, res) => {
 
                     if (d.action === 'wait') {
                         content.innerHTML = \`
-                            <div class="status-icon">⏳</div>
-                            <h3 style="color:var(--warning)">Oczekiwanie na decyzję...</h3>
-                            <p>Twoje IP wymaga ręcznej akceptacji administratora. Proszę nie zamykać tej karty.</p>
+                            <span class="status-icon">⏳</span>
+                            <h3 style="color:var(--warning); font-size:24px">RĘCZNA KONTROLA</h3>
+                            <p>Twoje połączenie wzbudziło czujność systemu. Administrator musi Cię zaakceptować ręcznie. <br><br><b>Nie zamykaj tej karty!</b></p>
                         \`;
                         startPolling('${userId}');
                     } else if (d.action === 'success') {
                         showSuccess();
                     } else {
                         content.innerHTML = \`
-                            <div class="status-icon">❌</div>
-                            <h3 style="color:var(--danger)">Weryfikacja przerwana</h3>
+                            <span class="status-icon">❌</span>
+                            <h3 style="color:var(--danger)">ODMOWA DOSTĘPU</h3>
                             <p>\${d.msg}</p>
-                            <button onclick="location.reload()">Spróbuj ponownie</button>
+                            <button onclick="location.reload()">SPRÓBUJ PONOWNIE</button>
                         \`;
                     }
                 };
 
                 function showSuccess() {
                     content.innerHTML = \`
-                        <div class="status-icon">✅</div>
-                        <h2 style="color:var(--success)">Sukces!</h2>
-                        <p>Zostałeś pomyślnie zweryfikowany. Możesz już wrócić na Discorda!</p>
+                        <span class="status-icon">✅</span>
+                        <h2 style="color:var(--success)">SUKCES!</h2>
+                        <p>Weryfikacja zakończona pomyślnie. Twoja rola została nadana automatycznie.</p>
+                        <div class="footer-text">Możesz już wrócić na Discorda</div>
                     \`;
                 }
 
@@ -184,9 +201,9 @@ app.get('/auth', (req, res) => {
                             } else if (s.status === 'banned') {
                                 clearInterval(timer);
                                 content.innerHTML = \`
-                                    <div class="status-icon">🚫</div>
-                                    <h3 style="color:var(--danger)">Dostęp odrzucony</h3>
-                                    <p>Administrator nie zaakceptował Twojego zgłoszenia.</p>
+                                    <span class="status-icon">🚫</span>
+                                    <h3 style="color:var(--danger)">ZABLOKOWANO</h3>
+                                    <p>Administrator odrzucił Twoją prośbę o wejście na serwer.</p>
                                 \`;
                             }
                         } catch (e) {}
@@ -202,8 +219,7 @@ app.get('/auth', (req, res) => {
 app.get('/status', async (req, res) => {
     const userId = req.query.userId;
     const track = await RequestTracker.findOne({ userId });
-    console.log(`Zapytanie o status: User=${userId}, Status=${track ? track.status : 'brak'}`);
-    res.set('Access-Control-Allow-Origin', '*'); // Pozwala na zapytania z przeglądarki
+    res.set('Access-Control-Allow-Origin', '*');
     res.json({ status: track ? track.status : 'pending' });
 });
 
@@ -222,22 +238,24 @@ app.post('/complete', async (req, res) => {
         const isForeign = country !== 'PL'; 
         const isMulticount = existingEntry && existingEntry.userId !== userId;
 
-        if (isVPN) return res.json({ action: 'error', msg: 'VPN jest zabroniony na tym serwerze.' });
+        if (isVPN) return res.json({ action: 'error', msg: 'Używanie VPN jest surowo zabronione.' });
 
         if (isMulticount || isForeign) {
             await RequestTracker.findOneAndUpdate({ userId }, { status: 'pending' }, { upsert: true });
             
-            const embed = new EmbedBuilder().setColor('#ff0000').setTitle('🛡️ PANEL WERYFIKACJI').setDescription(`Użytkownik: <@${userId}>\nKraj: **${country}**\nIP: \`${cleanIP}\``);
+            const embed = new EmbedBuilder().setColor('#ffaa00').setTitle('⚠️ WYKRYTO PODEJRZANE IP').setDescription(`Użytkownik: <@${userId}>\nKraj: **${country}**\nIP: \`${cleanIP}\`\nPowód: **${isForeign ? 'Zagraniczne IP' : 'Podejrzenie Multikonta'}**`);
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId(`allow_${userId}_${cleanIP}_${country}`).setLabel('Przepuść').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId(`ban_${userId}`).setLabel('Zbanuj').setStyle(ButtonStyle.Danger)
+                new ButtonBuilder().setCustomId(`ban_${userId}`).setLabel('Zablokuj').setStyle(ButtonStyle.Danger)
             );
 
             const adminMsgs = [];
             for (const id of ALL_ADMINS) {
-                const admin = await client.users.fetch(id);
-                const msg = await admin.send({ embeds: [embed], components: [row] });
-                adminMsgs.push({ adminId: id, messageId: msg.id });
+                try {
+                    const admin = await client.users.fetch(id);
+                    const msg = await admin.send({ embeds: [embed], components: [row] });
+                    adminMsgs.push({ adminId: id, messageId: msg.id });
+                } catch(err) { console.log(`Nie można wysłać DM do admina ${id}`); }
             }
             await new PanelTracker({ targetId: userId, adminMessages: adminMsgs }).save();
             return res.json({ action: 'wait' });
@@ -248,7 +266,7 @@ app.post('/complete', async (req, res) => {
         const member = await guild.members.fetch(userId);
         await member.roles.add(ROLE_ID);
         res.json({ action: 'success' });
-    } catch (e) { res.json({ action: 'error', msg: 'Błąd połączenia z serwerem.' }); }
+    } catch (e) { res.json({ action: 'error', msg: 'Wystąpił błąd podczas sprawdzania IP.' }); }
 });
 
 client.on('interactionCreate', async (int) => {
@@ -262,12 +280,16 @@ client.on('interactionCreate', async (int) => {
             await member.roles.add(ROLE_ID);
             if (ip) await UserIP.findOneAndUpdate({ userId: targetId }, { ip, country }, { upsert: true });
             await updateLiveStatus(targetId, 'allowed', `✅ Zaakceptowano przez **${int.user.tag}**`);
+            await int.reply({ content: `Użytkownik <@${targetId}> został wpuszczony.`, ephemeral: true });
         } else {
             await guild.members.ban(targetId, { reason: 'Odrzucono weryfikację' });
             await updateLiveStatus(targetId, 'banned', `🚫 Zbanowano przez **${int.user.tag}**`);
+            await int.reply({ content: `Użytkownik <@${targetId}> został zbanowany.`, ephemeral: true });
         }
-    } catch (e) { console.log("Błąd przycisku."); }
+    } catch (e) { console.log("Błąd przetwarzania przycisku."); }
 });
+
+client.on('ready', () => { console.log(`🤖 Bot zalogowany jako ${client.user.tag}`); });
 
 client.login(BOT_TOKEN);
 app.listen(process.env.PORT || 3000);
