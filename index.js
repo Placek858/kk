@@ -12,6 +12,7 @@ const ROLE_ID = '1473060746194845959';
 const MY_ID = '1131510639769178132'; 
 const ALL_ADMINS = [MY_ID, '1276586330847051780', '1210653947061080175'];
 
+// Połączenie z bazą danych
 mongoose.connect(MONGO_URI).then(() => console.log("✅ Baza danych aktywna"));
 
 const UserIP = mongoose.model('UserIP', new mongoose.Schema({ userId: String, ip: String, fingerprint: String, country: String, operator: String }));
@@ -21,9 +22,9 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBit
 const app = express();
 app.use(express.json());
 
-// --- STRONA GŁÓWNA ---
+// --- STRONA GŁÓWNA (Naprawia Cannot GET /) ---
 app.get('/', (req, res) => {
-    res.send('<body style="background:#0d0d12;color:white;display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;"><div><h1>🛡️ Night RP Security</h1><p>System operacyjny.</p></div></body>');
+    res.send('<body style="background:#0d0d12;color:white;display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;margin:0;"><div><h1 style="text-align:center;">🛡️ Night RP Security</h1><p style="color:#8e8e9e;">System operacyjny i aktywny.</p></div></body>');
 });
 
 // --- STRONA WERYFIKACJI ---
@@ -65,16 +66,16 @@ app.get('/auth', (req, res) => {
                     const d = await r.json();
 
                     if(d.action === 'success') {
-                        document.getElementById('box').innerHTML = '<h1>✅ Sukces</h1><p>Możesz wrócić na Discorda.</p>';
+                        document.getElementById('box').innerHTML = '<h1 style="color:#43b581;">✅ Sukces</h1><p>Możesz wrócić na Discorda.</p>';
                     } else if(d.action === 'wait') {
-                        document.getElementById('box').innerHTML = '<h1>⏳ Oczekiwanie</h1><p>Twoje IP jest podejrzane. Czekaj na akceptację Admina.</p>';
+                        document.getElementById('box').innerHTML = '<h1 style="color:#faa61a;">⏳ Oczekiwanie</h1><p>Twoje IP wymaga akceptacji Admina. Czekaj na tej stronie...</p>';
                         setInterval(async () => {
                             const res = await fetch('/status?userId=${userId}');
                             const s = await res.json();
                             if(s.status === 'allowed') location.reload();
                         }, 4000);
                     } else {
-                        document.getElementById('box').innerHTML = '<h1>❌ Błąd</h1><p>' + d.msg + '</p>';
+                        document.getElementById('box').innerHTML = '<h1 style="color:#f04747;">❌ Błąd</h1><p>' + d.msg + '</p><button class="btn" onclick="location.reload()">SPRÓBUJ PONOWNIE</button>';
                     }
                 };
             </script>
@@ -89,7 +90,7 @@ app.get('/status', async (req, res) => {
     res.json({ status: doc ? doc.status : 'pending' });
 });
 
-// --- FUNKCJA WYSYŁANIA LOGÓW ---
+// --- FUNKCJA WYSYŁANIA LOGÓW Z PRZYCISKAMI ---
 async function sendAdminLogs(targetId, ip, country, operator, type) {
     const embed = new EmbedBuilder()
         .setColor(type.includes('⚠️') ? '#faa61a' : '#43b581')
@@ -101,13 +102,44 @@ async function sendAdminLogs(targetId, ip, country, operator, type) {
             { name: '🔍 IP', value: `\`${ip}\``, inline: false }
         ).setTimestamp();
 
+    const components = [];
+    if (type.includes('⚠️')) {
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`accept_${targetId}`).setLabel('AKCEPTUJ ✅').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId(`reject_${targetId}`).setLabel('ODRZUĆ ❌').setStyle(ButtonStyle.Danger)
+        );
+        components.push(row);
+    }
+
     for (const id of ALL_ADMINS) {
         try {
             const admin = await client.users.fetch(id);
-            await admin.send({ embeds: [embed] });
+            await admin.send({ embeds: [embed], components: components });
         } catch (e) {}
     }
 }
+
+// --- OBSŁUGA PRZYCISKÓW AKCEPTACJI ---
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isButton()) return;
+    const [action, targetId] = interaction.customId.split('_');
+
+    if (action === 'accept') {
+        await RequestTracker.findOneAndUpdate({ userId: targetId }, { status: 'allowed' });
+        try {
+            const guild = await client.guilds.fetch(GUILD_ID);
+            const member = await guild.members.fetch(targetId);
+            await member.roles.add(ROLE_ID);
+            await interaction.reply({ content: `✅ Zaakceptowano <@${targetId}>. Rola nadana!`, ephemeral: true });
+        } catch (e) {
+            await interaction.reply({ content: `❌ Błąd nadawania roli. Sprawdź uprawnienia bota.`, ephemeral: true });
+        }
+    }
+    if (action === 'reject') {
+        await RequestTracker.deleteOne({ userId: targetId });
+        await interaction.reply({ content: `❌ Odrzucono prośbę użytkownika <@${targetId}>.`, ephemeral: true });
+    }
+});
 
 // --- LOGIKA WERYFIKACJI ---
 app.post('/complete', async (req, res) => {
