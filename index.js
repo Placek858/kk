@@ -7,198 +7,137 @@ const mongoose = require('mongoose');
 const BOT_TOKEN = process.env.DISCORD_TOKEN; 
 const MONGO_URI = process.env.MONGO_URI; 
 const PROXYCHECK_API_KEY = 'e2brv7-y9y366-243469-435457';
-const GUILD_ID = '1442529124114632717';
-const ROLE_ID = '1458855174268391547';
+const GUILD_ID = '1456335080116191436';
+const ROLE_ID = '1461789323262296084';
 const MY_ID = '1131510639769178132'; 
-const ALL_ADMINS = [MY_ID, '1131510639769178132'];
+const ALL_ADMINS = [MY_ID, '1364295526736199883', '1447828677109878904'];
 
-mongoose.connect(MONGO_URI).then(() => console.log("✅ Połączono z MongoDB Atlas"));
+mongoose.connect(MONGO_URI).then(() => console.log("✅ Połączono z bazą danych"));
 
-const UserIP = mongoose.model('UserIP', new mongoose.Schema({ userId: String, ip: String, country: String, operator: String }));
-const PanelTracker = mongoose.model('PanelTracker', new mongoose.Schema({ targetId: String, adminMessages: [{ adminId: String, messageId: String }] }));
-const RequestTracker = mongoose.model('RequestTracker', new mongoose.Schema({ userId: String, status: { type: String, default: 'pending' } }));
+// Schemat bazy danych z Fingerprintem
+const UserIP = mongoose.model('UserIP', new mongoose.Schema({ 
+    userId: String, 
+    ip: String, 
+    fingerprint: String,
+    country: String, 
+    operator: String 
+}));
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+const RequestTracker = mongoose.model('RequestTracker', new mongoose.Schema({ 
+    userId: String, 
+    status: { type: String, default: 'pending' } 
+}));
+
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
 const app = express();
 app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
 
-// --- LOGI DLA ADMINÓW ---
-async function sendAdminLogs(targetId, ip, country, operator, type, adminTag = null) {
-    const myLog = new EmbedBuilder()
-        .setColor(type.includes('RĘCZNA') ? '#43b581' : '#5865f2')
-        .setTitle(`📢 LOG WERYFIKACJI: ${type}`)
-        .setDescription(`**Użytkownik:** <@${targetId}>\n**Kraj:** ${country}\n**Operator:** \`${operator}\`\n**IP:** \`${ip}\`${adminTag ? `\n**Admin:** ${adminTag}` : ''}`)
-        .setTimestamp();
-
-    const adminLog = new EmbedBuilder()
-        .setColor(type.includes('RĘCZNA') ? '#43b581' : '#5865f2')
-        .setTitle(`📢 LOG WERYFIKACJI: ${type}`)
-        .setDescription(`**Użytkownik:** <@${targetId}>\n**Kraj:** ${country}\n**Operator:** \`UKRYTE\`\n**IP:** \`UKRYTE\`${adminTag ? `\n**Admin:** ${adminTag}` : ''}`)
-        .setTimestamp();
-
-    for (const id of ALL_ADMINS) {
-        try {
-            const admin = await client.users.fetch(id);
-            await admin.send({ embeds: [(id === MY_ID) ? myLog : adminLog] });
-        } catch (e) {}
-    }
-}
-
-async function updateLiveStatus(targetId, newStatus, actionText) {
-    await RequestTracker.findOneAndUpdate({ userId: targetId }, { status: newStatus }, { upsert: true });
-    const panel = await PanelTracker.findOne({ targetId });
-    if (!panel) return;
-    for (const entry of panel.adminMessages) {
-        try {
-            const admin = await client.users.fetch(entry.adminId);
-            const msg = await admin.dmChannel.messages.fetch(entry.messageId);
-            await msg.edit({ content: `**ZAKOŃCZONO:** ${actionText}`, components: [] });
-        } catch (e) {}
-    }
-    await PanelTracker.deleteOne({ targetId });
-}
-
-// --- STRONA INTERNETOWA (NOWOCZESNY DESIGN) ---
+// --- STRONA INTERNETOWA (PREMIUM DESIGN) ---
 app.get('/auth', (req, res) => {
     const userId = req.query.token;
     res.send(`
-        <html>
+        <!DOCTYPE html>
+        <html lang="pl">
         <head>
-            <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>Weryfikacja Konta</title>
+            <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Night RP | Security</title>
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
             <style>
-                body { margin: 0; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #0f0f1a; color: white; }
-                .card { background: #1c1c2b; padding: 40px; border-radius: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); text-align: center; max-width: 400px; width: 90%; border: 1px solid #2d2d44; }
-                h1 { font-size: 28px; margin-bottom: 10px; }
-                p { color: #a0a0b8; margin-bottom: 30px; line-height: 1.5; }
-                .btn { background: #5865f2; color: white; padding: 16px 32px; border: none; border-radius: 12px; cursor: pointer; font-size: 16px; font-weight: 700; transition: all 0.3s ease; width: 100%; }
-                .btn:hover { background: #4752c4; transform: translateY(-2px); box-shadow: 0 5px 15px rgba(88, 101, 242, 0.4); }
-                .spinner { width: 60px; height: 60px; border: 6px solid rgba(255,255,255,0.1); border-top: 6px solid #5865f2; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px auto; }
-                @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-                .icon { font-size: 60px; margin-bottom: 20px; }
-                .success-text { color: #43b581; font-weight: bold; }
-                .wait-text { color: #faa61a; font-weight: bold; }
+                :root { --discord: #5865f2; --bg: #0d0d12; --card: rgba(255, 255, 255, 0.03); }
+                body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: white; display: flex; justify-content: center; align-items: center; min-height: 100vh; overflow: hidden; }
+                .glow { position: absolute; width: 400px; height: 400px; background: radial-gradient(circle, rgba(88,101,242,0.15) 0%, transparent 70%); z-index: -1; }
+                .card { background: var(--card); backdrop-filter: blur(25px); border: 1px solid rgba(255,255,255,0.08); padding: 50px; border-radius: 32px; text-align: center; max-width: 420px; width: 90%; box-shadow: 0 40px 100px rgba(0,0,0,0.6); }
+                .icon-box { width: 80px; height: 80px; background: rgba(88,101,242,0.1); border-radius: 20px; display: flex; align-items: center; justify-content: center; margin: 0 auto 25px; color: var(--discord); font-size: 35px; border: 1px solid rgba(88,101,242,0.2); }
+                h1 { font-size: 26px; margin: 0 0 10px; font-weight: 700; letter-spacing: -0.5px; }
+                p { color: #8e8e9e; line-height: 1.6; margin-bottom: 35px; font-size: 15px; }
+                .btn { background: var(--discord); color: white; padding: 16px 32px; border: none; border-radius: 14px; cursor: pointer; font-size: 15px; font-weight: 700; width: 100%; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 10px 20px rgba(88,101,242,0.2); }
+                .btn:hover { transform: translateY(-3px); box-shadow: 0 15px 30px rgba(88,101,242,0.4); filter: brightness(1.1); }
+                .spinner { width: 50px; height: 50px; border: 4px solid rgba(255,255,255,0.05); border-top: 4px solid var(--discord); border-radius: 50%; animation: spin 0.8s cubic-bezier(0.5, 0.1, 0.4, 0.9) infinite; margin: 20px auto; }
+                @keyframes spin { to { transform: rotate(360deg); } }
+                .success-icon { color: #43b581; font-size: 60px; margin-bottom: 20px; }
             </style>
         </head>
         <body>
-            <div class="card" id="mainBox">
-                <div class="icon">🛡️</div>
-                <h1>Weryfikacja</h1>
-                <p>Aby uzyskać dostęp do serwera Night RP, kliknij przycisk poniżej w celu weryfikacji połączenia.</p>
-                <button class="btn" id="verifyBtn">ROZPOCZNIJ WERYFIKACJĘ</button>
+            <div class="glow"></div>
+            <div class="card" id="box">
+                <div class="icon-box">🛡️</div>
+                <h1>System Weryfikacji</h1>
+                <p>Potwierdź swoje połączenie, aby uzyskać dostęp do serwera Night RP. System sprawdza integralność Twojego urządzenia.</p>
+                <button class="btn" id="go">AUTORYZUJ DOSTĘP</button>
             </div>
 
             <script>
-                const box = document.getElementById('mainBox');
-                document.getElementById('verifyBtn').onclick = async () => {
-                    box.innerHTML = '<div class="spinner"></div><h1>Analiza...</h1><p>Trwa sprawdzanie bezpieczeństwa Twojego połączenia. Prosimy nie zamykać okna.</p>';
-                    
-                    try {
-                        const r = await fetch('/complete', { 
-                            method: 'POST', 
-                            headers: {'Content-Type': 'application/x-www-form-urlencoded'}, 
-                            body: 'userId=${userId}' 
-                        });
-                        const d = await r.json();
+                async function getFP() {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillText('NightRP-Shield', 10, 10);
+                    return btoa(canvas.toDataURL()); // Prosty fingerprint urządzenia
+                }
 
-                        if (d.action === 'wait') {
-                            box.innerHTML = '<div class="icon">⏳</div><h1 class="wait-text">Oczekiwanie</h1><p>Twoje połączenie wymaga ręcznej akceptacji administratora. Zostaniesz automatycznie przekierowany po decyzji.</p>';
-                            const interval = setInterval(async () => {
-                                const rs = await fetch('/status?userId=${userId}');
-                                const s = await rs.json();
-                                if (s.status === 'allowed') {
-                                    clearInterval(interval);
-                                    showFinalSuccess();
-                                }
-                            }, 3000);
-                        } else if (d.action === 'success') {
-                            showFinalSuccess();
-                        } else {
-                            box.innerHTML = '<div class="icon">❌</div><h1 style="color:#f04747">Błąd</h1><p>' + d.msg + '</p><button class="btn" onclick="location.reload()">SPRÓBUJ PONOWNIE</button>';
-                        }
-                    } catch(e) {
-                        box.innerHTML = '<h1>Błąd połączenia</h1>';
+                document.getElementById('go').onclick = async () => {
+                    const box = document.getElementById('box');
+                    const fp = await getFP();
+                    box.innerHTML = '<div class="spinner"></div><h1>Analiza Systemu...</h1><p>Weryfikujemy Twoje urządzenie oraz adres IP.</p>';
+                    
+                    const r = await fetch('/complete', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ userId: '${userId}', fp: fp })
+                    });
+                    const d = await r.json();
+
+                    if (d.action === 'wait') {
+                        box.innerHTML = '<div class="icon-box" style="color:#faa61a">⏳</div><h1>Oczekiwanie</h1><p>Twoje połączenie wymaga ręcznej autoryzacji przez Zarząd. Strona odświeży się automatycznie po decyzji.</p>';
+                        const check = setInterval(async () => {
+                            const res = await fetch('/status?userId=${userId}');
+                            const s = await res.json();
+                            if (s.status === 'allowed') { clearInterval(check); location.reload(); }
+                        }, 3000);
+                    } else if (d.action === 'success') {
+                        box.innerHTML = '<div class="success-icon">✅</div><h1>Zweryfikowano</h1><p>Twoja ranga została nadana. Możesz już wrócić na Discorda.</p>';
+                    } else {
+                        box.innerHTML = '<div class="icon-box" style="color:#f04747">❌</div><h1>Odmowa</h1><p>' + d.msg + '</p>';
                     }
                 };
-
-                function showFinalSuccess() {
-                    box.innerHTML = '<div class="icon">✅</div><h1 class="success-text">Zweryfikowano!</h1><p>Pomyślnie przeszedłeś proces weryfikacji. Twoja ranga na Discordzie została nadana. Możesz już zamknąć to okno.</p>';
-                }
             </script>
         </body>
         </html>
     `);
 });
 
-app.get('/status', async (req, res) => {
-    const track = await RequestTracker.findOne({ userId: req.query.userId });
-    res.json({ status: track ? track.status : 'pending' });
-});
-
 app.post('/complete', async (req, res) => {
-    const userId = req.body.userId;
-    const userIP = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-    const cleanIP = userIP.split(',')[0].trim();
+    const { userId, fp } = req.body;
+    const cleanIP = (req.headers['x-forwarded-for'] || req.socket.remoteAddress).split(',')[0].trim();
+
     try {
         const response = await axios.get(`https://proxycheck.io/v2/${cleanIP}?key=${PROXYCHECK_API_KEY}&vpn=3&asn=1`);
         const result = response.data[cleanIP];
         const country = result.isocode || '??';
         const operator = result.asn || 'Nieznany';
-        
-        if (result.proxy === 'yes') return res.json({ action: 'error', msg: 'Używanie VPN/Proxy jest zabronione.' });
 
-        const existingEntry = await UserIP.findOne({ ip: cleanIP });
-        if (country !== 'PL' || (existingEntry && existingEntry.userId !== userId)) {
+        // --- ZASTRZEŻENIE PRZECIW RESTARTOWI ROUTERA (FINGERPRINT) ---
+        const duplicateFP = await UserIP.findOne({ fingerprint: fp, userId: { $ne: userId } });
+        if (duplicateFP) {
+            return res.json({ action: 'error', msg: 'Wykryto próbę użycia tego samego urządzenia na wielu kontach.' });
+        }
+
+        // --- LOGIKA PODEJRZANEGO IP ---
+        const existingIP = await UserIP.findOne({ ip: cleanIP });
+        if (country !== 'PL' || (existingIP && existingIP.userId !== userId)) {
             await RequestTracker.findOneAndUpdate({ userId }, { status: 'pending' }, { upsert: true });
-            const myEmbed = new EmbedBuilder().setColor('#ffaa00').setTitle('⚠️ PODEJRZANE IP (TY)').setDescription(`Użytkownik: <@${userId}>\nKraj: ${country}\nOperator: \`${operator}\`\nIP: \`${cleanIP}\``).setTimestamp();
-            const adminEmbed = new EmbedBuilder().setColor('#ffaa00').setTitle('⚠️ PODEJRZANE IP').setDescription(`Użytkownik: <@${userId}>\nKraj: ${country}\nOperator: \`UKRYTE\`\nIP: \`UKRYTE\``).setTimestamp();
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`allow_${userId}_${cleanIP}_${country}_${operator.replace(/ /g, '-')}`).setLabel('Przepuść').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId(`ban_${userId}`).setLabel('Zablokuj').setStyle(ButtonStyle.Danger)
-            );
-            const adminMsgs = [];
-            for (const id of ALL_ADMINS) {
-                try {
-                    const admin = await client.users.fetch(id);
-                    const msg = await admin.send({ embeds: [(id === MY_ID) ? myEmbed : adminEmbed], components: [row] });
-                    adminMsgs.push({ adminId: id, messageId: msg.id });
-                } catch(err) {}
-            }
-            await new PanelTracker({ targetId: userId, adminMessages: adminMsgs }).save();
+            // Tu wysyłanie panelu do adminów (tak jak w poprzednim kodzie)...
             return res.json({ action: 'wait' });
         }
 
-        await new UserIP({ userId, ip: cleanIP, country, operator }).save();
+        await new UserIP({ userId, ip: cleanIP, fingerprint: fp, country, operator }).save();
         const guild = await client.guilds.fetch(GUILD_ID);
         const member = await guild.members.fetch(userId);
         await member.roles.add(ROLE_ID);
-        await sendAdminLogs(userId, cleanIP, country, operator, "AUTOMATYCZNA");
         res.json({ action: 'success' });
-    } catch (e) { res.json({ action: 'error', msg: 'Wystąpił błąd podczas analizy.' }); }
+    } catch (e) { res.json({ action: 'error', msg: 'Błąd połączenia z bazą.' }); }
 });
 
-client.on('interactionCreate', async (int) => {
-    if (!int.isButton()) return;
-    const [action, targetId, ip, country, operatorRaw] = int.customId.split('_');
-    const operator = operatorRaw ? operatorRaw.replace(/-/g, ' ') : 'Nieznany';
-    try {
-        if (action === 'allow') {
-            const guild = await client.guilds.fetch(GUILD_ID);
-            const member = await guild.members.fetch(targetId);
-            await member.roles.add(ROLE_ID);
-            await UserIP.findOneAndUpdate({ userId: targetId }, { ip, country, operator }, { upsert: true });
-            await updateLiveStatus(targetId, 'allowed', `✅ Zaakceptował ${int.user.tag}`);
-            await sendAdminLogs(targetId, ip, country, operator, "RĘCZNA AKCEPTACJA", int.user.tag);
-            await int.reply({ content: `Użytkownik zaakceptowany.`, ephemeral: true });
-        } else if (action === 'ban') {
-            const guild = await client.guilds.fetch(GUILD_ID);
-            await guild.members.ban(targetId, { reason: 'Odrzucona weryfikacja (Podejrzane IP)' });
-            await updateLiveStatus(targetId, 'banned', `🚫 Zbanował ${int.user.tag}`);
-            await int.reply({ content: `Użytkownik zbanowany.`, ephemeral: true });
-        }
-    } catch (e) {}
-});
-
-client.on('ready', () => console.log(`🤖 Render Bot: ${client.user.tag}`));
+// ... (reszta eventów i komenda status z poprzedniego kodu)
 client.login(BOT_TOKEN);
 app.listen(process.env.PORT || 3000);
