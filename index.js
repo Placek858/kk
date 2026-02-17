@@ -6,15 +6,15 @@ const { Strategy } = require('passport-discord');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
 
-// --- KONFIGURACJA ---
+// --- KONFIGURACJA (Pobierane z Environment Variables) ---
 const BOT_TOKEN = process.env.DISCORD_TOKEN; 
 const MONGO_URI = process.env.MONGO_URI; 
 const DOMAIN = process.env.DOMAIN; 
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 
-// --- MODELE BAZY DANYCH ---
-mongoose.connect(MONGO_URI).then(() => console.log("✅ SYSTEM ONLINE"));
+// --- POŁĄCZENIE Z BAZĄ ---
+mongoose.connect(MONGO_URI).then(() => console.log("✅ SYSTEM: Magistrala Icarus aktywna"));
 
 const GuildConfig = mongoose.model('GuildConfig', new mongoose.Schema({
     guildId: String,
@@ -39,7 +39,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use(session({
-    secret: 'icarus_professional_secret',
+    secret: 'icarus_pro_2026_core',
     resave: false,
     saveUninitialized: false,
     store: MongoStore.create({ mongoUrl: MONGO_URI })
@@ -49,42 +49,51 @@ passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((obj, done) => done(null, obj));
 
 passport.use(new Strategy({
-    clientID: CLIENT_ID, clientSecret: CLIENT_SECRET,
-    callbackURL: `${DOMAIN}/auth/callback`, scope: ['identify', 'guilds']
+    clientID: CLIENT_ID,
+    clientSecret: CLIENT_SECRET,
+    callbackURL: `${DOMAIN}/auth/callback`,
+    scope: ['identify', 'guilds']
 }, (at, rt, profile, done) => done(null, profile)));
 
 app.use(passport.initialize());
 app.use(passport.session());
 
-// --- STYLE CSS (PROFESJONALNY WYGLĄD) ---
+// --- STYLE CSS (PROFESJONALNY WYGLĄD KLASY ENTERPRISE) ---
 const UI_STYLE = `
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-    body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; background: #0f111a; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; }
-    .container { text-align: center; background: #161926; padding: 60px; border-radius: 24px; border: 1px solid #2d334a; box-shadow: 0 20px 50px rgba(0,0,0,0.5); width: 90%; max-width: 450px; }
-    h1 { font-size: 24px; letter-spacing: 3px; color: #5469d4; margin-bottom: 30px; text-transform: uppercase; }
-    .btn { display: block; padding: 16px; margin: 12px 0; border-radius: 8px; text-decoration: none; font-weight: 600; transition: 0.3s; font-size: 14px; cursor: pointer; border: none; text-align: center; }
-    .btn-blue { background: #5469d4; color: white; }
-    .btn-outline { border: 1px solid #5469d4; color: #5469d4; background: transparent; }
-    .btn:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(84, 105, 212, 0.3); }
-    .card-grid { display: grid; grid-template-columns: 1fr; gap: 15px; margin-top: 20px; }
-    .server-card { background: #1c2030; padding: 15px; border-radius: 10px; border: 1px solid #2d334a; display: flex; align-items: center; gap: 15px; }
-    .server-card img { width: 40px; height: 40px; border-radius: 50%; }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; background: #f8fafc; color: #1e293b; display: flex; justify-content: center; align-items: center; height: 100vh; }
+    .card { background: white; padding: 48px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); text-align: center; width: 90%; max-width: 420px; border: 1px solid #e2e8f0; }
+    .logo-box { width: 60px; height: 60px; background: #5469d4; color: white; border-radius: 14px; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; font-size: 28px; font-weight: 700; }
+    h1 { font-size: 22px; font-weight: 600; margin: 0 0 12px; color: #0f172a; }
+    p { color: #64748b; font-size: 15px; line-height: 1.6; margin-bottom: 30px; }
+    .btn { display: block; width: 100%; padding: 14px; background: #5469d4; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 15px; border: none; cursor: pointer; transition: 0.2s; box-sizing: border-box; }
+    .btn:hover { background: #4556ac; transform: translateY(-1px); }
+    .btn-outline { background: white; color: #5469d4; border: 1px solid #5469d4; margin-top: 12px; }
+    .loader { border: 3px solid #f3f3f3; border-top: 3px solid #5469d4; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px; display: none; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .server-list { margin-top: 20px; text-align: left; }
+    .server-item { display: flex; align-items: center; padding: 12px; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 10px; transition: 0.2s; }
+    .server-item:hover { border-color: #5469d4; background: #f1f5f9; }
+    .server-item img { width: 35px; height: 35px; border-radius: 50%; margin-right: 12px; }
 `;
 
-// --- TRASY HTTP ---
+// --- ROUTY STRON ---
 
 // 1. STRONA GŁÓWNA - WYBÓR
 app.get('/', (req, res) => {
     res.send(`
         <style>${UI_STYLE}</style>
-        <div class="container">
-            <h1>ICARUS SYSTEM</h1>
-            <a href="/login?target=verify" class="btn btn-blue">Panel Weryfikacji</a>
-            <a href="/login?target=dashboard" class="btn btn-outline">Zarządzanie Serwerami</a>
+        <div class="card">
+            <div class="logo-box">I</div>
+            <h1>Icarus Central</h1>
+            <p>Wybierz moduł systemu, do którego chcesz uzyskać dostęp.</p>
+            <a href="/login?target=verify" class="btn">Panel Weryfikacji</a>
+            <a href="/login?target=dashboard" class="btn btn-outline">Zarządzanie (Admin)</a>
         </div>
     `);
 });
 
+// 2. LOGOWANIE DISCORD
 app.get('/login', (req, res, next) => {
     const state = Buffer.from(JSON.stringify({ type: req.query.target || 'dashboard' })).toString('base64');
     passport.authenticate('discord', { state })(req, res, next);
@@ -95,59 +104,75 @@ app.get('/auth/callback', passport.authenticate('discord', { failureRedirect: '/
     res.redirect(`/${decoded.type}`);
 });
 
-// 2. WYBÓR SERWERA DO WERYFIKACJI
+// 3. LISTA SERWERÓW DLA UŻYTKOWNIKA
 app.get('/verify', (req, res) => {
     if (!req.isAuthenticated()) return res.redirect('/login?target=verify');
-    const guilds = req.user.guilds.filter(g => client.guilds.cache.has(g.id));
+    const commonGuilds = req.user.guilds.filter(g => client.guilds.cache.has(g.id));
     
-    let html = guilds.map(g => `
-        <div class="server-card">
-            <img src="${g.icon ? `https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png` : 'https://discord.com/assets/1f0ac125a376cf482a442e9127e8eb.svg'}">
-            <div style="flex:1; text-align:left;">${g.name}</div>
-            <a href="/auth?token=${req.user.id}&guild=${g.id}" class="btn btn-blue" style="margin:0; padding:8px 15px; font-size:12px;">Wybierz</a>
-        </div>
+    let list = commonGuilds.map(g => `
+        <a href="/auth?token=${req.user.id}&guild=${g.id}" style="text-decoration:none; color:inherit;">
+            <div class="server-item">
+                <img src="${g.icon ? `https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png` : 'https://discord.com/assets/1f0ac125a376cf482a442e9127e8eb.svg'}">
+                <span style="font-weight:500;">${g.name}</span>
+            </div>
+        </a>
     `).join('');
 
-    res.send(`<style>${UI_STYLE}</style><div class="container"><h1>Wybierz serwer</h1><div class="card-grid">${html || 'Brak serwerów'}</div></div>`);
+    res.send(`<style>${UI_STYLE}</style><div class="card"><h1>Twoje Serwery</h1><p>Wybierz serwer, na którym chcesz przejść weryfikację.</p><div class="server-list">${list || 'Nie znaleziono wspólnych serwerów.'}</div></div>`);
 });
 
-// 3. FINALNA STRONA WERYFIKACJI (PO KLIKNIĘCIU "WYBIERZ")
+// 4. STRONA FINALNEJ WERYFIKACJI (Z KÓŁKIEM)
 app.get('/auth', (req, res) => {
     res.send(`
-        <style>
-            ${UI_STYLE}
-            body { background: #f4f7f9; color: #1a1d23; }
-            .container { background: white; border: none; box-shadow: 0 10px 30px rgba(0,0,0,0.05); }
-        </style>
-        <div class="container">
-            <h2 style="color:#5469d4">Autoryzacja Icarus</h2>
-            <p style="color:#64748b; font-size:14px;">Kliknij przycisk poniżej, aby przesłać wniosek o weryfikację do administracji serwera.</p>
-            <button id="vBtn" onclick="start()" class="btn btn-blue" style="width:100%">Potwierdzam Tożsamość</button>
+        <style>${UI_STYLE}</style>
+        <div class="card" id="content">
+            <div class="logo-box" id="status-icon">🛡️</div>
+            <h1 id="main-title">Autoryzacja Konta</h1>
+            <p id="main-desc">Kliknij poniższy przycisk, aby wysłać dane do systemu audytowego Icarus.</p>
+            <div id="loader" class="loader"></div>
+            <button id="vBtn" onclick="sendData()" class="btn">Rozpocznij Weryfikację</button>
         </div>
         <script>
-            async function start() {
+            async function sendData() {
                 const btn = document.getElementById('vBtn');
-                btn.disabled = true; btn.innerText = 'Przetwarzanie...';
-                await fetch('/complete', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                const loader = document.getElementById('loader');
+                const desc = document.getElementById('main-desc');
+                
+                btn.style.display = 'none';
+                loader.style.display = 'block';
+                desc.innerText = 'Trwa zabezpieczanie sesji i przesyłanie danych...';
+
+                const response = await fetch('/complete', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ userId: '${req.query.token}', guildId: '${req.query.guild}' })
                 });
-                const check = setInterval(async () => {
-                    const r = await fetch('/status?userId=${req.query.token}&guildId=${req.query.guild}');
-                    const s = await r.json();
-                    if(s.status === 'success') { clearInterval(check); document.body.innerHTML = '<h1>✅ Zweryfikowano</h1>'; }
-                    if(s.status === 'rejected') { clearInterval(check); document.body.innerHTML = '<h1 style="color:red">❌ Odrzucono</h1><p>Powód: ' + s.reason + '</p>'; }
-                }, 3000);
+
+                if(response.ok) {
+                    desc.innerText = 'Wniosek przesłany do administratorów. Proszę czekać na decyzję...';
+                    const poll = setInterval(async () => {
+                        const r = await fetch('/status?userId=${req.query.token}&guildId=${req.query.guild}');
+                        const s = await r.json();
+                        if(s.status === 'success') {
+                            clearInterval(poll);
+                            document.getElementById('content').innerHTML = '<div style="font-size:50px;margin-bottom:20px;">✅</div><h1>Weryfikacja Pomyślna</h1><p>Dostęp został przyznany. Możesz wrócić na Discorda.</p>';
+                        } else if(s.status === 'rejected') {
+                            clearInterval(poll);
+                            document.getElementById('content').innerHTML = '<div style="font-size:50px;margin-bottom:20px;">❌</div><h1 style="color:#ef4444">Odrzucono</h1><p>Powód: ' + (s.reason || 'Brak') + '</p>';
+                        }
+                    }, 3000);
+                }
             }
         </script>
     `);
 });
 
-// 4. LOGIKA BACKENDOWA LOGÓW I STATUSU
+// --- BACKEND: LOGI I OBSŁUGA ---
+
 app.post('/complete', async (req, res) => {
     const { userId, guildId } = req.body;
     const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress).split(',')[0].trim();
-    const userAgent = req.headers['user-agent'];
+    const ua = req.headers['user-agent'];
 
     await RequestTracker.findOneAndUpdate({ userId, guildId }, { status: 'pending' }, { upsert: true });
 
@@ -155,15 +180,16 @@ app.post('/complete', async (req, res) => {
     if (guild) {
         const logChan = guild.channels.cache.find(c => c.name === 'icarus-logs') || guild.channels.cache.filter(c => c.isTextBased()).first();
         const embed = new EmbedBuilder()
-            .setTitle('🛡️ NOWA PROŚBA O WERYFIKACJĘ')
+            .setTitle('🛡️ AUDYT ICARUS: PROŚBA O DOSTĘP')
             .setColor('#5469d4')
+            .setThumbnail(client.user.displayAvatarURL())
             .addFields(
                 { name: '👤 Użytkownik', value: `<@${userId}> (\`${userId}\`)`, inline: true },
                 { name: '🌐 Adres IP', value: `\`${ip}\``, inline: true },
-                { name: '💻 System', value: `\`${userAgent.substring(0, 60)}...\`` },
-                { name: '🕒 Czas', value: `<t:${Math.floor(Date.now()/1000)}:F>` }
-            )
-            .setFooter({ text: 'Icarus Pro Logs' });
+                { name: '💻 System/UA', value: `\`${ua.substring(0, 70)}...\`` },
+                { name: '🕒 Czas', value: `<t:${Math.floor(Date.now()/1000)}:F>` },
+                { name: '📊 Status', value: '```diff\n+ Sesja aktywna\n! Oczekiwanie na decyzję admina```' }
+            );
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId(`acc_${userId}_${guildId}`).setLabel('Zatwierdź').setStyle(ButtonStyle.Success),
@@ -171,10 +197,9 @@ app.post('/complete', async (req, res) => {
         );
         logChan.send({ embeds: [embed], components: [row] });
     }
-    res.sendStatus(200);
+    res.json({ status: 'sent' });
 });
 
-// --- OBSŁUGA PRZYCISKÓW ADMINA ---
 client.on('interactionCreate', async (i) => {
     if (i.isButton()) {
         const [action, uid, gid] = i.customId.split('_');
@@ -183,14 +208,15 @@ client.on('interactionCreate', async (i) => {
             const guild = client.guilds.cache.get(gid);
             const member = await guild.members.fetch(uid).catch(() => null);
             if (member && config?.verifyRoleId) await member.roles.add(config.verifyRoleId);
+            
             await RequestTracker.findOneAndUpdate({ userId: uid, guildId: gid }, { status: 'success', adminId: i.user.id });
             
-            const edited = EmbedBuilder.from(i.message.embeds[0]).setTitle('✅ ZAAKCEPTOWANO').setColor('#24b47e').addFields({name:'👮 Admin', value:`<@${i.user.id}>`});
-            await i.update({ embeds: [edited], components: [] });
+            const ed = EmbedBuilder.from(i.message.embeds[0]).setTitle('✅ DOSTĘP ZAAKCEPTOWANY').setColor('#10b981').addFields({name:'👮 Administrator', value:`<@${i.user.id}>`});
+            await i.update({ embeds: [ed], components: [] });
         }
         if (action === 'rej') {
-            const modal = new ModalBuilder().setCustomId(`mod_rej_${uid}_${gid}`).setTitle('Powód odrzucenia');
-            const input = new TextInputBuilder().setCustomId('reason').setLabel('Dlaczego odrzucasz?').setStyle(TextInputStyle.Paragraph).setRequired(true);
+            const modal = new ModalBuilder().setCustomId(`mod_rej_${uid}_${gid}`).setTitle('Odrzucenie weryfikacji');
+            const input = new TextInputBuilder().setCustomId('reason').setLabel('Podaj powód odrzucenia:').setStyle(TextInputStyle.Paragraph).setRequired(true);
             modal.addComponents(new ActionRowBuilder().addComponents(input));
             await i.showModal(modal);
         }
@@ -199,14 +225,14 @@ client.on('interactionCreate', async (i) => {
         const [,, uid, gid] = i.customId.split('_');
         const reason = i.fields.getTextInputValue('reason');
         await RequestTracker.findOneAndUpdate({ userId: uid, guildId: gid }, { status: 'rejected', adminId: i.user.id, reason });
-        const edited = EmbedBuilder.from(i.message.embeds[0]).setTitle('❌ ODRZUCONO').setColor('#ed4245').addFields({name:'👮 Admin', value:`<@${i.user.id}>`}, {name:'📝 Powód', value:reason});
-        await i.update({ embeds: [edited], components: [] });
+        const ed = EmbedBuilder.from(i.message.embeds[0]).setTitle('❌ DOSTĘP ODRZUCONY').setColor('#ef4444').addFields({name:'👮 Admin', value:`<@${i.user.id}>`}, {name:'📝 Powód', value:reason});
+        await i.update({ embeds: [ed], components: [] });
     }
 });
 
 app.get('/status', async (req, res) => {
     const doc = await RequestTracker.findOne({ userId: req.query.userId, guildId: req.query.guildId });
-    res.json({ status: doc ? doc.status : 'pending', reason: doc?.reason || 'Brak' });
+    res.json({ status: doc ? doc.status : 'pending', reason: doc?.reason });
 });
 
 app.listen(process.env.PORT || 3000);
