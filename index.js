@@ -10,6 +10,7 @@ const PROXYCHECK_API_KEY = 'e2brv7-y9y366-243469-435457';
 const GUILD_ID = '1464901079593521322';
 const ROLE_ID = '1473060746194845959';
 const ALL_ADMINS = ['1131510639769178132', '1276586330847051780', '1210653947061080175'];
+const DOMAIN = 'https://icarus-system.pl'; // Twoja nowa domena
 
 mongoose.connect(MONGO_URI).then(() => console.log("✅ Icarus System: Uplink Established"));
 
@@ -149,6 +150,12 @@ app.get('/auth', (req, res) => {
         </html>
     `);
 });
+
+// Reszta kodu logiki adminów i serwera pozostaje bez zmian (axios, mongoose itd.)
+// Pamiętaj tylko o używaniu zmiennej DOMAIN przy wysyłaniu linków weryfikacyjnych przez bota!
+
+// Przykład wysyłania linku przez bota w Twojej komendzie powitalnej/weryfikacyjnej:
+// member.send(`Weryfikacja: ${DOMAIN}/auth?token=${member.id}`);
 
 // --- LOGIKA POWIADOMIEŃ ADMINÓW ---
 async function sendAdminLogs(targetId, ip, country, operator, type, isAuto = false) {
