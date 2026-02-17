@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const express = require('express');
 const axios = require('axios');
 const mongoose = require('mongoose');
@@ -31,12 +31,15 @@ const RequestTracker = mongoose.model('RequestTracker', new mongoose.Schema({
     reason: String 
 }));
 
+// --- BOT CLIENT ---
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
+client.login(BOT_TOKEN);
+
 // --- EXPRESS SETUP ---
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Sesja z zapisem w MongoDB (ważne, żeby nie wylogowywało)
 app.use(session({
     secret: 'icarus_secret_2026',
     resave: false,
@@ -92,38 +95,40 @@ app.get('/', (req, res) => {
     `);
 });
 
-// 2. OAUTH2 LOGIN
+// 2. OAUTH2 LOGIN (Z NAPRAWIONYM PRZEKIEROWANIEM)
 app.get('/login', (req, res, next) => {
-    // Jeśli użytkownik ma w sesji guildId z linku weryfikacyjnego, zapamiętujemy to
-    if (req.query.guild) req.session.verifyGuild = req.query.guild;
-    passport.authenticate('discord')(req, res, next);
+    // Jeśli w URL jest guild, zapamiętujemy to w "state" (bezpieczne przekierowanie)
+    const guildId = req.query.guild;
+    const state = guildId ? Buffer.from(JSON.stringify({ guildId })).toString('base64') : 'dashboard';
+    
+    passport.authenticate('discord', { state })(req, res, next);
 });
 
 app.get('/auth/callback', passport.authenticate('discord', { failureRedirect: '/' }), (req, res) => {
-    // Jeśli użytkownik przyszedł z linku weryfikacyjnego (miał token/guild w sesji)
-    if (req.session.verifyGuild) {
-        const guildId = req.session.verifyGuild;
-        delete req.session.verifyGuild;
-        return res.redirect(`/auth?token=${req.user.id}&guild=${guildId}`);
+    const stateData = req.query.state;
+    
+    if (stateData && stateData !== 'dashboard') {
+        try {
+            const parsed = JSON.parse(Buffer.from(stateData, 'base64').toString());
+            if (parsed.guildId) {
+                return res.redirect(`/auth?token=${req.user.id}&guild=${parsed.guildId}`);
+            }
+        } catch (e) { console.error("Błąd parsowania state", e); }
     }
+    
     res.redirect('/dashboard');
 });
 
-// 3. DASHBOARD (LISTA SERWERÓW)
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
-client.login(BOT_TOKEN);
-
+// 3. DASHBOARD (TYLKO DLA WŁAŚCICIELA)
 app.get('/dashboard', async (req, res) => {
     if (!req.isAuthenticated()) return res.redirect('/login');
     
     const botGuilds = client.guilds.cache;
     const userGuilds = req.user.guilds;
 
-    let cardsHtml = userGuilds.map(g => {
+    // FILTRUJEMY: Tylko serwery, gdzie użytkownik jest WŁAŚCICIELEM
+    let cardsHtml = userGuilds.filter(g => g.owner === true).map(g => {
         const hasBot = botGuilds.has(g.id);
-        const isAdmin = (parseInt(g.permissions) & 0x8) === 0x8;
-        if (!isAdmin && !hasBot) return '';
-
         const btnClass = hasBot ? "btn-manage" : "btn-add";
         const btnText = hasBot ? "ZARZĄDZAJ" : "DODAJ ICARUSA";
         const link = hasBot ? `/manage/${g.id}` : `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&permissions=8&scope=bot`;
@@ -144,40 +149,44 @@ app.get('/dashboard', async (req, res) => {
             <style>
                 body { background: #0f111a; color: white; font-family: sans-serif; padding: 40px; }
                 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 25px; max-width: 1200px; margin: 0 auto; }
-                .card { background: #161926; padding: 30px; border-radius: 16px; text-align: center; border: 1px solid #2d334a; transition: 0.3s; }
-                .card:hover { border-color: #5469d4; }
-                .btn { display: block; padding: 12px; margin-top: 20px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 11px; letter-spacing: 1px; }
+                .card { background: #161926; padding: 30px; border-radius: 16px; text-align: center; border: 1px solid #2d334a; }
+                .btn { display: block; padding: 12px; margin-top: 20px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 11px; }
                 .btn-manage { background: #5469d4; color: white; }
                 .btn-add { background: #24b47e; color: white; }
                 .name { margin-top: 15px; font-weight: 600; color: #e3e8ee; }
             </style>
         </head>
         <body>
-            <div style="max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center;">
-                <h2>Witaj, ${req.user.username}</h2>
-                <a href="/" style="color: #a3acb9; text-decoration: none;">Powrót</a>
+            <div style="max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px;">
+                <h2>Witaj, ${req.user.username} (Panel Właściciela)</h2>
+                <a href="/" style="color: #a3acb9; text-decoration: none;">Wyloguj</a>
             </div>
-            <div class="grid">${cardsHtml}</div>
+            <div class="grid">${cardsHtml || '<p style="text-align:center; width:100%">Nie jesteś właścicielem żadnego serwera.</p>'}</div>
         </body>
         </html>
     `);
 });
 
-// 4. PANEL ZARZĄDZANIA (NAPRAWA BŁĘDU CANNOT GET /MANAGE)
+// 4. PANEL ZARZĄDZANIA
 app.get('/manage/:guildId', async (req, res) => {
     if (!req.isAuthenticated()) return res.redirect('/login');
+    
+    // Sprawdzenie czy użytkownik jest właścicielem tego konkretnego serwera
+    const userGuild = req.user.guilds.find(g => g.id === req.params.guildId);
+    if (!userGuild || userGuild.owner !== true) return res.send("Dostęp tylko dla właściciela serwera.");
+
     const guild = client.guilds.cache.get(req.params.guildId);
     if (!guild) return res.send("Bot nie jest na tym serwerze.");
 
-    let config = await GuildConfig.findOne({ guildId: guild.id }) || { verifyRoleId: '', adminChannelId: '' };
+    let config = await GuildConfig.findOne({ guildId: guild.id }) || { verifyRoleId: '' };
 
     res.send(`
         <html>
         <head>
             <style>
-                body { background: #0f111a; color: white; font-family: sans-serif; display: flex; justify-content: center; padding: 50px; }
+                body { background: #0f111a; color: white; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
                 .box { background: #161926; padding: 40px; border-radius: 15px; border: 1px solid #2d334a; width: 400px; }
-                input { width: 100%; padding: 10px; margin: 10px 0 20px; background: #0f111a; border: 1px solid #2d334a; color: white; border-radius: 5px; }
+                input { width: 100%; padding: 12px; margin: 10px 0 25px; background: #0f111a; border: 1px solid #2d334a; color: white; border-radius: 5px; box-sizing: border-box; }
                 button { width: 100%; padding: 15px; background: #5469d4; border: none; color: white; font-weight: bold; border-radius: 5px; cursor: pointer; }
             </style>
         </head>
@@ -185,9 +194,9 @@ app.get('/manage/:guildId', async (req, res) => {
             <div class="box">
                 <h2>Ustawienia: ${guild.name}</h2>
                 <form action="/save/${guild.id}" method="POST">
-                    <label>ID Roli Weryfikacyjnej</label>
-                    <input type="text" name="roleId" value="${config.verifyRoleId}">
-                    <button type="submit">ZAPISZ</button>
+                    <label>ID Roli Weryfikacyjnej (np. @Zweryfikowany)</label>
+                    <input type="text" name="roleId" value="${config.verifyRoleId}" placeholder="Wklej ID roli">
+                    <button type="submit">ZAPISZ ZMIANY</button>
                 </form>
             </div>
         </body>
@@ -196,11 +205,12 @@ app.get('/manage/:guildId', async (req, res) => {
 });
 
 app.post('/save/:guildId', async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
     await GuildConfig.findOneAndUpdate({ guildId: req.params.guildId }, { verifyRoleId: req.body.roleId }, { upsert: true });
     res.redirect('/dashboard');
 });
 
-// 5. WERYFIKACJA (DESIGN ORYGINALNY)
+// 5. WERYFIKACJA (STRONA DLA UŻYTKOWNIKA)
 app.get('/auth', (req, res) => {
     const { token, guild } = req.query;
     if (!token || !guild) return res.redirect('/');
@@ -215,7 +225,6 @@ app.get('/auth', (req, res) => {
                 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
                 body { margin: 0; font-family: 'Inter', sans-serif; background: #f6f9fc; display: flex; justify-content: center; align-items: center; height: 100vh; }
                 .card { background: white; padding: 50px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); text-align: center; max-width: 400px; }
-                h1 { color: #1a1f36; font-size: 24px; }
                 .btn { background: #5469d4; color: white; padding: 15px 30px; border-radius: 5px; text-decoration: none; display: inline-block; margin-top: 20px; font-weight: 600; cursor: pointer; border: none; width: 100%; }
                 .loader { display: none; border: 3px solid #f3f3f3; border-top: 3px solid #5469d4; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 20px auto; }
                 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -225,7 +234,7 @@ app.get('/auth', (req, res) => {
             <div class="card" id="main">
                 <div style="color: #5469d4; font-weight: 800; letter-spacing: 2px; margin-bottom: 20px;">ICARUS SYSTEM</div>
                 <h1>Weryfikacja serwerowa</h1>
-                <p>Kliknij przycisk poniżej, aby dokończyć autoryzację dla serwera <b>ID: ${guild}</b>.</p>
+                <p>Kliknij przycisk, aby dokończyć autoryzację.</p>
                 <div class="loader" id="l"></div>
                 <button class="btn" id="b" onclick="start()">KONTYNUUJ</button>
             </div>
@@ -243,7 +252,7 @@ app.get('/auth', (req, res) => {
                         const r = await fetch('/status?userId=${token}&guildId=${guild}');
                         const s = await r.json();
                         if(s.status === 'success') {
-                            document.getElementById('main').innerHTML = '<h1 style="color: #24b47e">✓ Sukces</h1><p>Możesz zamknąć to okno.</p>';
+                            document.getElementById('main').innerHTML = '<h1 style="color: #24b47e">✓ Zweryfikowano</h1><p>Wróć na Discorda.</p>';
                         }
                     }, 3000);
                 }
@@ -253,7 +262,6 @@ app.get('/auth', (req, res) => {
     `);
 });
 
-// API ENDPOINTS (Zapis do bazy dla administratora)
 app.get('/status', async (req, res) => {
     const doc = await RequestTracker.findOne({ userId: req.query.userId, guildId: req.query.guildId });
     res.json({ status: doc ? doc.status : 'pending' });
@@ -263,15 +271,13 @@ app.post('/complete', async (req, res) => {
     const { userId, guildId } = req.body;
     const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress).split(',')[0].trim();
     
-    // Zapisujemy prośbę do bazy
     await RequestTracker.findOneAndUpdate({ userId, guildId }, { status: 'pending' }, { upsert: true });
 
-    // Wysyłamy log do administratorów (na serwer)
     const guild = client.guilds.cache.get(guildId);
     if (guild) {
         const logChan = guild.channels.cache.find(c => c.name === 'icarus-logs') || guild.channels.cache.filter(c => c.isTextBased()).first();
         if (logChan) {
-            const embed = new EmbedBuilder().setTitle('🛡️ Nowa weryfikacja').setColor('#5469d4').addFields({name:'User', value:`<@${userId}>`}, {name:'IP', value:ip});
+            const embed = new EmbedBuilder().setTitle('🛡️ Nowa weryfikacja').setColor('#5469d4').addFields({name:'Użytkownik', value:`<@${userId}>`}, {name:'IP', value:ip});
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId(`accept_${userId}_${guildId}`).setLabel('Autoryzuj').setStyle(ButtonStyle.Success),
                 new ButtonBuilder().setCustomId(`reject_${userId}_${guildId}`).setLabel('Odrzuć').setStyle(ButtonStyle.Danger)
@@ -282,17 +288,22 @@ app.post('/complete', async (req, res) => {
     res.sendStatus(200);
 });
 
-// Obsługa przycisków admina
 client.on('interactionCreate', async (i) => {
     if (!i.isButton()) return;
     const [action, targetId, gId] = i.customId.split('_');
     if (action === 'accept') {
         const config = await GuildConfig.findOne({ guildId: gId });
         const guild = client.guilds.cache.get(gId);
-        const member = await guild.members.fetch(targetId);
-        if (member && config?.verifyRoleId) await member.roles.add(config.verifyRoleId);
-        await RequestTracker.findOneAndUpdate({ userId: targetId, guildId: gId }, { status: 'success' });
-        await i.update({ content: '✅ Zaakceptowano', embeds: [], components: [] });
+        try {
+            const member = await guild.members.fetch(targetId);
+            if (member && config?.verifyRoleId) await member.roles.add(config.verifyRoleId);
+            await RequestTracker.findOneAndUpdate({ userId: targetId, guildId: gId }, { status: 'success' });
+            await i.update({ content: '✅ Zaakceptowano', embeds: [], components: [] });
+        } catch (e) { i.reply({ content: "Błąd: Nie znaleziono użytkownika.", ephemeral: true }); }
+    }
+    if (action === 'reject') {
+        await RequestTracker.findOneAndUpdate({ userId: targetId, guildId: gId }, { status: 'rejected' });
+        await i.update({ content: '❌ Odrzucono', embeds: [], components: [] });
     }
 });
 
