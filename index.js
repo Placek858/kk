@@ -12,7 +12,7 @@ const DOMAIN = process.env.DOMAIN || 'https://icarus-system.pl';
 const ROLE_NAME = 'Zweryfikowany'; 
 
 // --- DATABASE ---
-mongoose.connect(MONGO_URI).then(() => console.log("✅ ICARUS: Corporate Systems Online"));
+mongoose.connect(MONGO_URI).then(() => console.log("✅ ICARUS: System Core Online"));
 
 const UserIP = mongoose.model('UserIP', new mongoose.Schema({ userId: String, ip: String, fingerprint: String, country: String }));
 const RequestTracker = mongoose.model('RequestTracker', new mongoose.Schema({ userId: String, status: { type: String, default: 'pending' }, reason: String }));
@@ -22,7 +22,7 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBit
 const app = express();
 app.use(express.json());
 
-// --- FRONTEND: REALISTIC CORPORATE DESIGN ---
+// --- FRONTEND: ICARUS CORPORATE DESIGN ---
 app.get('/auth', (req, res) => {
     const userId = req.query.token;
     res.send(`
@@ -30,60 +30,52 @@ app.get('/auth', (req, res) => {
         <html lang="pl">
         <head>
             <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Centrum Weryfikacji Icarus</title>
+            <title>Icarus System • Authorization</title>
             <style>
-                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
                 body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; background-color: #f6f9fc; color: #1a1f36; display: flex; justify-content: center; align-items: center; height: 100vh; }
-                .card { background: #ffffff; padding: 48px; width: 100%; max-width: 420px; border-radius: 16px; box-shadow: 0 15px 35px rgba(50,50,93,0.1), 0 5px 15px rgba(0,0,0,0.07); transition: all 0.3s ease; }
-                .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 32px; font-weight: 600; font-size: 20px; color: #5469d4; }
-                .brand-icon { width: 32px; height: 32px; background: #5469d4; border-radius: 8px; }
-                h1 { font-size: 24px; font-weight: 600; margin: 0 0 12px 0; }
-                p { font-size: 15px; line-height: 1.6; color: #4f566b; margin-bottom: 32px; }
-                .btn { background-color: #5469d4; color: #fff; border: none; padding: 12px 24px; font-size: 16px; font-weight: 500; border-radius: 4px; width: 100%; cursor: pointer; }
-                .footer-text { margin-top: 32px; font-size: 12px; color: #a3acb9; text-align: center; border-top: 1px solid #e3e8ee; padding-top: 24px; }
-                .loader { display: none; width: 24px; height: 24px; border: 2px solid #e3e8ee; border-top: 2px solid #5469d4; border-radius: 50%; margin: 0 auto 20px; animation: spin 0.6s linear infinite; }
-                #console { font-size: 13px; color: #697386; margin-top: 16px; text-align: center; }
+                .card { background: #ffffff; padding: 48px; width: 100%; max-width: 420px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid #e3e8ee; text-align: center; }
+                .brand { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 30px; color: #5469d4; font-weight: 700; font-size: 20px; text-transform: uppercase; letter-spacing: 1px; }
+                .brand-icon { width: 32px; height: 32px; background: #5469d4; border-radius: 6px; }
+                h1 { font-size: 24px; color: #1a1f36; margin-bottom: 15px; font-weight: 600; }
+                p { font-size: 15px; color: #4f566b; line-height: 1.6; margin-bottom: 30px; }
+                .btn { background-color: #5469d4; color: #fff; border: none; padding: 14px 28px; font-size: 16px; font-weight: 500; border-radius: 4px; width: 100%; cursor: pointer; transition: background 0.2s; }
+                .btn:hover { background-color: #243d8c; }
+                .loader { display: none; width: 28px; height: 28px; border: 3px solid #e3e8ee; border-top: 3px solid #5469d4; border-radius: 50%; margin: 0 auto 20px; animation: spin 0.8s linear infinite; }
+                #console { font-size: 14px; color: #5469d4; margin-top: 15px; font-weight: 500; }
                 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+                .footer { margin-top: 40px; font-size: 12px; color: #a3acb9; border-top: 1px solid #e3e8ee; padding-top: 20px; }
             </style>
         </head>
         <body>
-            <div class="card" id="mainCard">
-                <div class="brand"><div class="brand-icon"></div>ICARUS SOLUTIONS</div>
-                <div id="contentArea">
+            <div class="card">
+                <div class="brand"><div class="brand-icon"></div> ICARUS SYSTEM</div>
+                <div id="content">
                     <h1>Weryfikacja tożsamości</h1>
-                    <p>Aby kontynuować, prosimy o przeprowadzenie standardowej autoryzacji urządzenia.</p>
+                    <p>System Icarus wymaga autoryzacji urządzenia w celu przyznania dostępu do zasobów sieciowych.</p>
                     <div class="loader" id="loader"></div>
-                    <div id="status-area"><button class="btn" id="startBtn">Kontynuuj</button></div>
+                    <div id="btn-container"><button class="btn" id="startBtn">KONTYNUUJ</button></div>
                     <div id="console"></div>
                 </div>
-                <div class="footer-text">&copy; 2026 Icarus Solutions Ltd. System Bezpieczeństwa.</div>
+                <div class="footer">&copy; 2026 Icarus Solutions Ltd. Security Division.</div>
             </div>
 
             <script>
                 const userId = "${userId}";
-                const content = document.getElementById('contentArea');
+                const content = document.getElementById('content');
                 const btn = document.getElementById('startBtn');
                 const loader = document.getElementById('loader');
                 const con = document.getElementById('console');
 
-                function showSuccess() {
-                    content.innerHTML = '<div style="text-align:center;"><div style="font-size:48px; color:#24b47e; margin-bottom:24px;">✓</div><h1>Dostęp przyznany</h1><p>Twoja tożsamość została pomyślnie zweryfikowana przez system Icarus. Możesz teraz zamknąć to okno.</p></div>';
-                }
-
-                function showReject(reason) {
-                    content.innerHTML = '<div style="text-align:center;"><div style="font-size:48px; color:#cd3d64; margin-bottom:24px;">✕</div><h1>Odmowa dostępu</h1><p>Twoja prośba o autoryzację została odrzucona przez administratora.</p><div style="background:#fef1f2; color:#cd3d64; padding:12px; border-radius:6px; font-size:13px; text-align:left;"><strong>Powód:</strong> ' + reason + '</div></div>';
-                }
-
-                async function checkStatus() {
+                async function check() {
                     const r = await fetch('/status?userId=' + userId);
                     const s = await r.json();
-                    
                     if(s.status === 'allowed_manually' || s.status === 'success') {
-                        showSuccess();
-                        return true; // Stop polling
+                        content.innerHTML = '<div style="color:#24b47e; font-size:50px; margin-bottom:15px;">✓</div><h1>Autoryzacja pomyślna</h1><p>Dostęp został przyznany. Możesz powrócić do aplikacji Discord.</p>';
+                        return true;
                     } else if(s.status === 'rejected') {
-                        showReject(s.reason || "Brak szczegółowego uzasadnienia.");
-                        return true; // Stop polling
+                        content.innerHTML = '<div style="color:#cd3d64; font-size:50px; margin-bottom:15px;">✕</div><h1>Odmowa dostępu</h1><p>Twoje zgłoszenie zostało odrzucone przez administratora.</p><div style="background:#fff1f2; border:1px solid #fecaca; padding:12px; color:#991b1b; font-size:14px; text-align:left; border-radius:4px;"><strong>Powód:</strong> ' + (s.reason || "Brak uzasadnienia") + '</div>';
+                        return true;
                     }
                     return false;
                 }
@@ -91,26 +83,21 @@ app.get('/auth', (req, res) => {
                 btn.onclick = async () => {
                     btn.style.display = 'none'; loader.style.display = 'block';
                     con.innerText = "Przetwarzanie danych...";
-                    const fp = btoa(screen.width+"x"+screen.height+"|"+Intl.DateTimeFormat().resolvedOptions().timeZone);
                     
                     const res = await fetch('/complete', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ userId, fp })
+                        body: JSON.stringify({ userId })
                     });
                     const d = await res.json();
 
                     if(d.action === 'success') {
-                        showSuccess();
-                    } else if(d.action === 'wait') {
-                        con.innerText = "Oczekiwanie na decyzję administratora...";
-                        const poll = setInterval(async () => {
-                            const stop = await checkStatus();
-                            if(stop) clearInterval(poll);
-                        }, 3000);
+                        location.reload();
                     } else {
-                        con.style.color = "#cd3d64"; con.innerText = d.msg;
-                        btn.style.display = 'block'; loader.style.display = 'none';
+                        con.innerText = "Oczekiwanie na decyzję administracji...";
+                        const poll = setInterval(async () => {
+                            if(await check()) clearInterval(poll);
+                        }, 2000);
                     }
                 };
             </script>
@@ -119,43 +106,65 @@ app.get('/auth', (req, res) => {
     `);
 });
 
-// --- BACKEND LOGIC ---
-async function grantAccess(userId) {
-    client.guilds.cache.forEach(async (guild) => {
-        try {
-            const role = guild.roles.cache.find(r => r.name === ROLE_NAME);
-            if (role) {
-                const member = await guild.members.fetch(userId).catch(() => null);
-                if (member) await member.roles.add(role);
-            }
-        } catch (e) {}
-    });
-}
+// --- ADMIN INTERACTIONS ---
+client.on('interactionCreate', async (i) => {
+    if (i.isButton()) {
+        const [action, targetId] = i.customId.split('_');
+        if (action === 'accept') {
+            await RequestTracker.findOneAndUpdate({ userId: targetId }, { status: 'allowed_manually' }, { upsert: true });
+            await grantAccess(targetId);
+            await updateAdminLogs(targetId, i.user, 'accept');
+            await i.reply({ content: 'Zatwierdzono dostęp.', ephemeral: true });
+        }
+        if (action === 'reject') {
+            const modal = new ModalBuilder().setCustomId(`mod_${targetId}`).setTitle('Odrzuć wniosek');
+            modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('r').setLabel('Uzasadnienie').setStyle(TextInputStyle.Paragraph).setRequired(true)));
+            await i.showModal(modal);
+        }
+    }
+    if (i.isModalSubmit() && i.customId.startsWith('mod_')) {
+        const targetId = i.customId.split('_')[1];
+        const reason = i.fields.getTextInputValue('r');
+        await RequestTracker.findOneAndUpdate({ userId: targetId }, { status: 'rejected', reason }, { upsert: true });
+        await updateAdminLogs(targetId, i.user, 'reject', reason);
+        await i.reply({ content: 'Wniosek odrzucony.', ephemeral: true });
+    }
+});
 
+// --- LOGIC FUNCTIONS ---
 async function updateAdminLogs(targetId, adminUser, action, reason = "") {
     const logData = await AdminLog.findOne({ targetId });
     if (!logData) return;
     for (const msgRef of logData.messages) {
         try {
             const admin = await client.users.fetch(msgRef.adminId);
-            const message = await (await admin.createDM()).messages.fetch(msgRef.messageId);
-            const status = action === 'accept' ? `✅ **Dostęp autoryzowany**` : `❌ **Dostęp zablokowany**\nPowód: ${reason}`;
-            const newEmbed = EmbedBuilder.from(message.embeds[0]).setColor(action === 'accept' ? '#24b47e' : '#cd3d64').setDescription(status);
-            await message.edit({ embeds: [newEmbed], components: [] });
+            const dm = await admin.createDM();
+            const msg = await dm.messages.fetch(msgRef.messageId);
+            const status = action === 'accept' ? `✅ **Dostęp przyznany przez:** <@${adminUser.id}>` : `❌ **Dostęp odrzucony przez:** <@${adminUser.id}>\n**Powód:** ${reason}`;
+            const newEmbed = EmbedBuilder.from(msg.embeds[0]).setColor(action === 'accept' ? '#24b47e' : '#cd3d64').setDescription(status);
+            await msg.edit({ embeds: [newEmbed], components: [] });
         } catch (e) {}
     }
     await AdminLog.deleteOne({ targetId });
 }
 
-async function sendAdminLogs(targetId, ip, country, operator, type, isAuto = false) {
+async function grantAccess(userId) {
+    client.guilds.cache.forEach(async (guild) => {
+        const role = guild.roles.cache.find(r => r.name === ROLE_NAME);
+        const member = await guild.members.fetch(userId).catch(() => null);
+        if (role && member) await member.roles.add(role);
+    });
+}
+
+async function sendAdminLogs(targetId, ip, country, operator) {
     const embed = new EmbedBuilder()
-        .setTitle(isAuto ? `Autoryzacja automatyczna` : `Weryfikacja manualna`)
-        .setColor(isAuto ? '#24b47e' : '#f5a623')
+        .setTitle('Icarus System • Nowa Autoryzacja')
+        .setColor('#f5a623')
         .addFields(
-            { name: 'Użytkownik', value: `<@${targetId}>`, inline: true },
-            { name: 'IP/Kraj', value: `${ip} (${country})`, inline: true },
-            { name: 'Powód weryfikacji', value: type, inline: false }
-        );
+            { name: 'Użytkownik', value: `<@${targetId}> (\`${targetId}\`)` },
+            { name: 'Lokalizacja', value: `\`${ip}\` (${country})`, inline: true },
+            { name: 'Dostawca', value: `\`${operator}\``, inline: true }
+        ).setFooter({ text: 'Wymagana decyzja administratora' });
 
     const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`accept_${targetId}`).setLabel('Autoryzuj').setStyle(ButtonStyle.Success),
@@ -166,36 +175,12 @@ async function sendAdminLogs(targetId, ip, country, operator, type, isAuto = fal
     for (const admId of ALL_ADMINS) {
         try {
             const admin = await client.users.fetch(admId);
-            const m = await admin.send({ embeds: [embed], components: isAuto ? [] : [row] });
-            if (!isAuto) msgRefs.push({ adminId: admId, messageId: m.id });
+            const m = await admin.send({ embeds: [embed], components: [row] });
+            msgRefs.push({ adminId: admId, messageId: m.id });
         } catch (e) {}
     }
-    if (msgRefs.length > 0) await AdminLog.findOneAndUpdate({ targetId }, { messages: msgRefs }, { upsert: true });
+    await AdminLog.findOneAndUpdate({ targetId }, { messages: msgRefs }, { upsert: true });
 }
-
-client.on('interactionCreate', async (i) => {
-    if (i.isButton()) {
-        const [action, targetId] = i.customId.split('_');
-        if (action === 'accept') {
-            await RequestTracker.findOneAndUpdate({ userId: targetId }, { status: 'allowed_manually' });
-            await grantAccess(targetId);
-            await updateAdminLogs(targetId, i.user, 'accept');
-            await i.reply({ content: 'Zaakceptowano.', ephemeral: true });
-        }
-        if (action === 'reject') {
-            const modal = new ModalBuilder().setCustomId(`mod_${targetId}`).setTitle('Powód odmowy');
-            modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('r').setLabel('Dlaczego odrzucasz?').setStyle(TextInputStyle.Paragraph).setRequired(true)));
-            await i.showModal(modal);
-        }
-    }
-    if (i.isModalSubmit() && i.customId.startsWith('mod_')) {
-        const targetId = i.customId.split('_')[1];
-        const reason = i.fields.getTextInputValue('r');
-        await RequestTracker.findOneAndUpdate({ userId: targetId }, { status: 'rejected', reason });
-        await updateAdminLogs(targetId, i.user, 'reject', reason);
-        await i.reply({ content: 'Odrzucono.', ephemeral: true });
-    }
-});
 
 app.get('/status', async (req, res) => {
     const doc = await RequestTracker.findOne({ userId: req.query.userId });
@@ -203,29 +188,25 @@ app.get('/status', async (req, res) => {
 });
 
 app.post('/complete', async (req, res) => {
-    const { userId, fp } = req.body;
+    const { userId } = req.body;
     const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress).split(',')[0].trim();
     try {
-        const { data } = await axios.get(`https://proxycheck.io/v2/${ip}?key=${PROXYCHECK_API_KEY}&vpn=3&asn=1`);
+        const { data } = await axios.get(`https://proxycheck.io/v2/${ip}?key=${PROXYCHECK_API_KEY}&vpn=3`);
         const country = data[ip].isocode || '??';
-        const operator = data[ip].asn || 'Nieznany';
-
-        if (country !== 'PL' || data[ip].proxy === 'yes') {
-            await RequestTracker.findOneAndUpdate({ userId }, { status: 'pending' }, { upsert: true });
-            await sendAdminLogs(userId, ip, country, operator, data[ip].proxy === 'yes' ? "VPN/Proxy" : "Zagraniczne IP", false);
-            return res.json({ action: 'wait' });
-        }
-
-        await new UserIP({ userId, ip, fingerprint: fp, country }).save();
-        await grantAccess(userId);
-        await sendAdminLogs(userId, ip, country, operator, "Auto-sukces", true);
-        res.json({ action: 'success' });
-    } catch (e) { res.json({ action: 'error', msg: 'Błąd serwera.' }); }
+        
+        await RequestTracker.findOneAndUpdate({ userId }, { status: 'pending' }, { upsert: true });
+        await sendAdminLogs(userId, ip, country, data[ip].asn || "Unknown");
+        res.json({ action: 'wait' });
+    } catch (e) { res.status(500).send(); }
 });
 
-client.on('guildMemberAdd', async (member) => {
-    const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel('Weryfikacja').setURL(`${DOMAIN}/auth?token=${member.id}`).setStyle(ButtonStyle.Link));
-    member.send({ content: 'Wymagana weryfikacja:', components: [row] }).catch(() => {});
+client.on('guildMemberAdd', async (m) => {
+    const embed = new EmbedBuilder()
+        .setTitle('ICARUS SYSTEM • Weryfikacja')
+        .setDescription('Zostałeś skierowany do centrum autoryzacji Icarus. Kliknij poniższy przycisk, aby kontynuować proces weryfikacji urządzenia.')
+        .setColor('#5469d4');
+    const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel('URUCHOM PORTAL').setURL(`${DOMAIN}/auth?token=${m.id}`).setStyle(ButtonStyle.Link));
+    m.send({ embeds: [embed], components: [row] }).catch(() => {});
 });
 
 client.login(BOT_TOKEN);
