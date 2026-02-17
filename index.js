@@ -1,6 +1,5 @@
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const express = require('express');
-const axios = require('axios');
 const mongoose = require('mongoose');
 const passport = require('passport');
 const { Strategy } = require('passport-discord');
@@ -10,7 +9,6 @@ const MongoStore = require('connect-mongo');
 // --- CONFIGURATION ---
 const BOT_TOKEN = process.env.DISCORD_TOKEN; 
 const MONGO_URI = process.env.MONGO_URI; 
-const PROXYCHECK_API_KEY = 'e2brv7-y9y366-243469-435457';
 const DOMAIN = process.env.DOMAIN; 
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
@@ -20,15 +18,13 @@ mongoose.connect(MONGO_URI).then(() => console.log("✅ ICARUS: System Core Onli
 
 const GuildConfig = mongoose.model('GuildConfig', new mongoose.Schema({
     guildId: String,
-    verifyRoleId: String,
-    adminChannelId: String
+    verifyRoleId: String
 }));
 
 const RequestTracker = mongoose.model('RequestTracker', new mongoose.Schema({ 
     userId: String, 
     guildId: String,
-    status: { type: String, default: 'pending' }, 
-    reason: String 
+    status: { type: String, default: 'pending' }
 }));
 
 // --- BOT CLIENT ---
@@ -64,7 +60,7 @@ app.use(passport.session());
 
 // --- ROUTES ---
 
-// 1. STRONA STARTOWA
+// 1. STRONA GŁÓWNA - DWA PRZYCISKI
 app.get('/', (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -78,192 +74,153 @@ app.get('/', (req, res) => {
                 .container { text-align: center; background: #161926; padding: 60px; border-radius: 24px; border: 1px solid #2d334a; box-shadow: 0 20px 50px rgba(0,0,0,0.5); max-width: 500px; width: 90%; }
                 h1 { font-size: 28px; letter-spacing: 4px; color: #5469d4; margin-bottom: 40px; }
                 .btn { display: block; padding: 18px; margin: 15px 0; border-radius: 8px; text-decoration: none; font-weight: 600; transition: 0.3s; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; text-align: center; cursor: pointer; border: none; }
-                .btn-verify { background: #5469d4; color: white; width: 100%; }
-                .btn-dash { border: 1px solid #5469d4; color: #5469d4; background: transparent; width: 100%; }
+                .btn-verify { background: #5469d4; color: white; }
+                .btn-dash { border: 1px solid #5469d4; color: #5469d4; background: transparent; }
                 .btn:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(84, 105, 212, 0.2); }
             </style>
         </head>
         <body>
             <div class="container">
                 <h1>ICARUS SYSTEM</h1>
-                <p style="color: #a3acb9; margin-bottom: 30px;">Security & Management Portal</p>
-                <a href="/login" class="btn btn-verify">Autoryzuj Urządzenie</a>
-                <a href="/login" class="btn btn-dash">Panel Zarządzania</a>
+                <a href="/login?target=verify" class="btn btn-verify">Zweryfikuj się</a>
+                <a href="/login?target=dashboard" class="btn btn-dash">Panel Zarządzania</a>
             </div>
         </body>
         </html>
     `);
 });
 
-// 2. OAUTH2 LOGIN (KLUCZOWA NAPRAWA PRZEKIEROWANIA)
 app.get('/login', (req, res, next) => {
-    // Sprawdzamy, czy w zapytaniu jest ID serwera (link od bota)
-    const guildId = req.query.guild;
-    
-    // Kodujemy cel podróży do parametru "state"
-    const target = guildId ? { type: 'verify', guildId } : { type: 'dashboard' };
-    const state = Buffer.from(JSON.stringify(target)).toString('base64');
-    
+    const targetType = req.query.target || 'dashboard';
+    const state = Buffer.from(JSON.stringify({ type: targetType })).toString('base64');
     passport.authenticate('discord', { state })(req, res, next);
 });
 
 app.get('/auth/callback', passport.authenticate('discord', { failureRedirect: '/' }), (req, res) => {
     const stateData = req.query.state;
-    
+    let target = 'dashboard';
     if (stateData) {
         try {
             const decoded = JSON.parse(Buffer.from(stateData, 'base64').toString());
-            
-            // Jeśli to była weryfikacja, wysyłamy na stronę /auth z parametrami
-            if (decoded.type === 'verify' && decoded.guildId) {
-                return res.redirect(`/auth?token=${req.user.id}&guild=${decoded.guildId}`);
-            }
-        } catch (e) {
-            console.error("Błąd dekodowania state:", e);
-        }
+            target = decoded.type;
+        } catch (e) {}
     }
-    
-    // W każdym innym przypadku (brak state lub typ dashboard) -> Panel
-    res.redirect('/dashboard');
+    res.redirect(`/${target}`);
 });
 
-// 3. DASHBOARD (TYLKO DLA WŁAŚCICIELA)
-app.get('/dashboard', async (req, res) => {
-    if (!req.isAuthenticated()) return res.redirect('/login');
-    
+// 2. LISTA SERWERÓW DO WERYFIKACJI
+app.get('/verify', (req, res) => {
+    if (!req.isAuthenticated()) return res.redirect('/login?target=verify');
     const botGuilds = client.guilds.cache;
     const userGuilds = req.user.guilds;
 
-    // Filtracja: Tylko serwery gdzie użytkownik jest właścicielem (owner: true)
+    let cardsHtml = userGuilds.filter(g => botGuilds.has(g.id)).map(g => `
+        <div class="card">
+            <img src="${g.icon ? `https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png` : 'https://discord.com/assets/1f0ac125a376cf482a442e9127e8eb.svg'}" width="50" style="border-radius:50%">
+            <div class="name">${g.name}</div>
+            <a href="/auth?token=${req.user.id}&guild=${g.id}" class="btn-go">Wybierz</a>
+        </div>
+    `).join('');
+
+    res.send(dashboardTemplate("Wybierz serwer do weryfikacji", cardsHtml));
+});
+
+// 3. LISTA SERWERÓW DO ZARZĄDZANIA
+app.get('/dashboard', (req, res) => {
+    if (!req.isAuthenticated()) return res.redirect('/login?target=dashboard');
+    const botGuilds = client.guilds.cache;
+    const userGuilds = req.user.guilds;
+
     let cardsHtml = userGuilds.filter(g => g.owner === true).map(g => {
         const hasBot = botGuilds.has(g.id);
-        const btnClass = hasBot ? "btn-manage" : "btn-add";
-        const btnText = hasBot ? "ZARZĄDZAJ" : "DODAJ ICARUSA";
-        const link = hasBot ? `/manage/${g.id}` : `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&permissions=8&scope=bot`;
-
         return `
             <div class="card">
-                <img src="${g.icon ? `https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png` : 'https://discord.com/assets/1f0ac125a376cf482a442e9127e8eb.svg'}" width="60" style="border-radius: 50%">
+                <img src="${g.icon ? `https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png` : 'https://discord.com/assets/1f0ac125a376cf482a442e9127e8eb.svg'}" width="50" style="border-radius:50%">
                 <div class="name">${g.name}</div>
-                <a href="${link}" class="btn ${btnClass}">${btnText}</a>
+                <a href="${hasBot ? `/manage/${g.id}` : `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&permissions=8&scope=bot`}" 
+                   class="btn-go" style="background: ${hasBot ? '#5469d4' : '#24b47e'}">
+                   ${hasBot ? 'Zarządzaj' : 'Dodaj Bota'}
+                </a>
             </div>
         `;
     }).join('');
 
-    res.send(`
-        <html>
-        <head>
-            <title>Icarus Dashboard</title>
-            <style>
-                body { background: #0f111a; color: white; font-family: sans-serif; padding: 40px; }
-                .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 25px; max-width: 1200px; margin: 0 auto; }
-                .card { background: #161926; padding: 30px; border-radius: 16px; text-align: center; border: 1px solid #2d334a; }
-                .btn { display: block; padding: 12px; margin-top: 20px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 11px; }
-                .btn-manage { background: #5469d4; color: white; }
-                .btn-add { background: #24b47e; color: white; }
-            </style>
-        </head>
-        <body>
-            <div style="max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px;">
-                <h2>Witaj, ${req.user.username}</h2>
-                <a href="/" style="color: #a3acb9; text-decoration: none;">Wyloguj</a>
-            </div>
-            <div class="grid">${cardsHtml || '<p style="text-align:center; width:100%">Nie jesteś właścicielem żadnego serwera.</p>'}</div>
-        </body>
-        </html>
-    `);
+    res.send(dashboardTemplate("Twoje Serwery (Admin)", cardsHtml));
 });
 
-// 4. PANEL ZARZĄDZANIA
+function dashboardTemplate(title, content) {
+    return `
+        <body style="background: #0f111a; color: white; font-family: sans-serif; padding: 50px;">
+            <style>
+                .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
+                .card { background: #161926; padding: 20px; border-radius: 12px; text-align: center; border: 1px solid #2d334a; }
+                .btn-go { display: block; padding: 10px; margin-top: 15px; background: #5469d4; color: white; text-decoration: none; border-radius: 5px; font-size: 12px; font-weight: bold; }
+                .name { margin-top: 10px; font-weight: 600; font-size: 14px; }
+            </style>
+            <div style="max-width: 1000px; margin: 0 auto;">
+                <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 30px;">
+                    <h2>${title}</h2>
+                    <a href="/" style="color: #a3acb9; text-decoration: none;">Powrót</a>
+                </div>
+                <div class="grid">${content || 'Brak serwerów do wyświetlenia.'}</div>
+            </div>
+        </body>
+    `;
+}
+
+// 4. PANEL KONFIGURACJI
 app.get('/manage/:guildId', async (req, res) => {
     if (!req.isAuthenticated()) return res.redirect('/login');
     const userGuild = req.user.guilds.find(g => g.id === req.params.guildId);
-    if (!userGuild || userGuild.owner !== true) return res.send("Brak uprawnień właściciela.");
+    if (!userGuild || !userGuild.owner) return res.send("Brak uprawnień.");
 
     const guild = client.guilds.cache.get(req.params.guildId);
-    if (!guild) return res.send("Bot nie jest na serwerze.");
-
-    let config = await GuildConfig.findOne({ guildId: guild.id }) || { verifyRoleId: '' };
+    let config = await GuildConfig.findOne({ guildId: req.params.guildId }) || { verifyRoleId: '' };
 
     res.send(`
-        <html>
-        <head>
-            <style>
-                body { background: #0f111a; color: white; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-                .box { background: #161926; padding: 40px; border-radius: 15px; border: 1px solid #2d334a; width: 400px; }
-                input { width: 100%; padding: 12px; margin: 10px 0 25px; background: #0f111a; border: 1px solid #2d334a; color: white; border-radius: 5px; box-sizing: border-box; }
-                button { width: 100%; padding: 15px; background: #5469d4; border: none; color: white; font-weight: bold; border-radius: 5px; cursor: pointer; }
-            </style>
-        </head>
-        <body>
-            <div class="box">
-                <h2>Ustawienia: ${guild.name}</h2>
-                <form action="/save/${guild.id}" method="POST">
-                    <label>ID Roli Weryfikacyjnej</label>
-                    <input type="text" name="roleId" value="${config.verifyRoleId}" placeholder="ID Roli">
-                    <button type="submit">ZAPISZ</button>
+        <body style="background: #0f111a; color: white; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh;">
+            <div style="background: #161926; padding: 40px; border-radius: 15px; border: 1px solid #2d334a; width: 350px;">
+                <h3>Ustawienia: ${guild.name}</h3>
+                <form action="/save/${req.params.guildId}" method="POST">
+                    <label>ID Roli Weryfikacyjnej:</label>
+                    <input type="text" name="roleId" value="${config.verifyRoleId}" style="width: 100%; padding: 10px; margin: 10px 0; background: #0f111a; border: 1px solid #2d334a; color: white;">
+                    <button type="submit" style="width: 100%; padding: 12px; background: #5469d4; border: none; color: white; cursor: pointer; border-radius: 5px;">ZAPISZ</button>
                 </form>
             </div>
         </body>
-        </html>
     `);
 });
 
 app.post('/save/:guildId', async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
     await GuildConfig.findOneAndUpdate({ guildId: req.params.guildId }, { verifyRoleId: req.body.roleId }, { upsert: true });
     res.redirect('/dashboard');
 });
 
-// 5. WERYFIKACJA
+// 5. FINALNA WERYFIKACJA
 app.get('/auth', (req, res) => {
     const { token, guild } = req.query;
-    if (!token || !guild) return res.redirect('/');
-    
     res.send(`
-        <!DOCTYPE html>
-        <html lang="pl">
-        <head>
-            <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Icarus • Weryfikacja</title>
-            <style>
-                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
-                body { margin: 0; font-family: 'Inter', sans-serif; background: #f6f9fc; display: flex; justify-content: center; align-items: center; height: 100vh; }
-                .card { background: white; padding: 50px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); text-align: center; max-width: 400px; }
-                .btn { background: #5469d4; color: white; padding: 15px 30px; border-radius: 5px; text-decoration: none; display: inline-block; margin-top: 20px; font-weight: 600; cursor: pointer; border: none; width: 100%; }
-                .loader { display: none; border: 3px solid #f3f3f3; border-top: 3px solid #5469d4; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 20px auto; }
-                @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-            </style>
-        </head>
-        <body>
-            <div class="card" id="main">
-                <div style="color: #5469d4; font-weight: 800; letter-spacing: 2px; margin-bottom: 20px;">ICARUS SYSTEM</div>
-                <h1>Weryfikacja serwerowa</h1>
-                <p>Kliknij przycisk, aby dokończyć autoryzację.</p>
-                <div class="loader" id="l"></div>
-                <button class="btn" id="b" onclick="start()">KONTYNUUJ</button>
+        <body style="background: #f6f9fc; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh;">
+            <div style="background: white; padding: 40px; border-radius: 10px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+                <h2 style="color: #5469d4;">Weryfikacja Icarus</h2>
+                <button onclick="start()" id="btn" style="padding: 15px 30px; background: #5469d4; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">POTWIERDZAM</button>
             </div>
             <script>
                 async function start() {
-                    document.getElementById('b').style.display = 'none';
-                    document.getElementById('l').style.display = 'block';
+                    document.getElementById('btn').innerText = 'Przetwarzanie...';
                     await fetch('/complete', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({ userId: '${token}', guildId: '${guild}' })
                     });
-                    
                     setInterval(async () => {
                         const r = await fetch('/status?userId=${token}&guildId=${guild}');
                         const s = await r.json();
-                        if(s.status === 'success') {
-                            document.getElementById('main').innerHTML = '<h1 style="color: #24b47e">✓ Zweryfikowano</h1><p>Wróć na Discorda.</p>';
-                        }
+                        if(s.status === 'success') document.body.innerHTML = '<h1>✓ Zweryfikowano!</h1>';
                     }, 3000);
                 }
             </script>
         </body>
-        </html>
     `);
 });
 
@@ -281,7 +238,7 @@ app.post('/complete', async (req, res) => {
     if (guild) {
         const logChan = guild.channels.cache.find(c => c.name === 'icarus-logs') || guild.channels.cache.filter(c => c.isTextBased()).first();
         if (logChan) {
-            const embed = new EmbedBuilder().setTitle('🛡️ Nowa weryfikacja').setColor('#5469d4').addFields({name:'Użytkownik', value:`<@${userId}>`}, {name:'IP', value:ip});
+            const embed = new EmbedBuilder().setTitle('🛡️ Prośba o weryfikację').setColor('#5469d4').addFields({name:'User', value:`<@${userId}>`}, {name:'IP', value:ip});
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId(`accept_${userId}_${guildId}`).setLabel('Autoryzuj').setStyle(ButtonStyle.Success),
                 new ButtonBuilder().setCustomId(`reject_${userId}_${guildId}`).setLabel('Odrzuć').setStyle(ButtonStyle.Danger)
@@ -303,11 +260,7 @@ client.on('interactionCreate', async (i) => {
             if (member && config?.verifyRoleId) await member.roles.add(config.verifyRoleId);
             await RequestTracker.findOneAndUpdate({ userId: targetId, guildId: gId }, { status: 'success' });
             await i.update({ content: '✅ Zaakceptowano', embeds: [], components: [] });
-        } catch (e) { i.reply({ content: "Błąd użytkownika.", ephemeral: true }); }
-    }
-    if (action === 'reject') {
-        await RequestTracker.findOneAndUpdate({ userId: targetId, guildId: gId }, { status: 'rejected' });
-        await i.update({ content: '❌ Odrzucono', embeds: [], components: [] });
+        } catch (e) { i.reply({ content: "Błąd.", ephemeral: true }); }
     }
 });
 
