@@ -121,7 +121,13 @@ app.get('/verify', (req, res) => {
 app.get('/auth', (req, res) => {
     res.send('<style>' + UI_STYLE + '</style><div class="card"><h1>Analiza bezpieczeństwa</h1><p id="msg">Skanowanie parametrów urządzenia w celu autoryzacji...</p><div class="loader"></div><script>' +
         'const run = async () => {' +
-        '  const fp = JSON.stringify({ screen: window.screen.width + "x" + window.screen.height, lang: navigator.language, cores: navigator.hardwareConcurrency, platform: navigator.platform });' +
+        '  const fpData = { ' +
+        '    sw: window.screen.width, sh: window.screen.height, cd: window.screen.colorDepth, ' +
+        '    l: navigator.language, c: navigator.hardwareConcurrency, p: navigator.platform, ' +
+        '    tz: Intl.DateTimeFormat().resolvedOptions().timeZone, ' +
+        '    m: navigator.maxTouchPoints ' +
+        '  };' +
+        '  const fp = JSON.stringify(fpData);' +
         '  await fetch("/complete", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ userId: "' + req.query.token + '", guildId: "' + req.query.guild + '", fp: fp }) });' +
         '  setInterval(async () => {' +
         '    const r = await fetch("/status?userId=' + req.query.token + '&guildId=' + req.query.guild + '");' +
@@ -139,11 +145,19 @@ app.post('/complete', async (req, res) => {
     const config = await GuildConfig.findOne({ guildId });
     const guild = client.guilds.cache.get(guildId);
 
-    // ANALIZA RYZYKA
+    // AGRESYWNA ANALIZA RYZYKA
     let manualReason = null;
-    const duplicate = await RequestTracker.findOne({ fingerprint: fp, guildId, status: 'success', userId: { $ne: userId } });
-    if(duplicate) manualReason = "⚠️ WYKRYTO POWIĄZANE URZĄDZENIE (MULTI-ACCOUNT)";
+    
+    // Szukamy jakiegokolwiek śladu tego urządzenia u INNEGO użytkownika na tym serwerze
+    const duplicate = await RequestTracker.findOne({ 
+        fingerprint: fp, 
+        guildId: guildId, 
+        userId: { $ne: userId } 
+    });
+    
+    if(duplicate) manualReason = `⚠️ MULTI-ACCOUNT: Urządzenie powiązane z ID: ${duplicate.userId}`;
 
+    // Detekcja VPN / Hosting / Proxy
     const ipData = await axios.get(`http://ip-api.com/json/${ip}?fields=status,proxy,hosting,country,city,isp`).catch(() => ({data:{}}));
     if(ipData.data.proxy || ipData.data.hosting) manualReason = "🛡️ WYKRYTO VPN / PROXY / HOSTING";
 
@@ -159,7 +173,7 @@ app.post('/complete', async (req, res) => {
             .addFields(
                 { name: '👤 Użytkownik', value: `<@${userId}> (\`${userId}\`)` },
                 { name: '🌐 Adres IP', value: `\`${ip}\` (${ipData.data.country || 'N/A'})`, inline: true },
-                { name: '💻 Specyfikacja', value: `OS: ${parsedFp.platform}\nRdzenie: ${parsedFp.cores}\nEkran: ${parsedFp.screen}`, inline: true }
+                { name: '💻 Specyfikacja', value: `OS: ${parsedFp.p}\nTZ: ${parsedFp.tz}\nEkran: ${parsedFp.sw}x${parsedFp.sh}`, inline: true }
             );
 
         if(manualReason) {
@@ -175,7 +189,7 @@ app.post('/complete', async (req, res) => {
                 const member = await guild.members.fetch(userId);
                 if (config?.verifyRoleId) await member.roles.add(config.verifyRoleId);
                 await RequestTracker.findOneAndUpdate({ userId, guildId }, { status: 'success' });
-                embed.setDescription('System automatycznie zatwierdził profil na podstawie braku naruszeń polityki bezpieczeństwa.');
+                embed.setDescription('System automatycznie zatwierdził profil. Brak powiązań sprzętowych i VPN.');
                 logChan.send({ embeds: [embed] });
             } catch (e) {
                 logChan.send({ content: `⚠️ Błąd automatycznego nadawania roli dla <@${userId}>. Sprawdź hierarchię ról.` });
