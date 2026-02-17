@@ -134,7 +134,7 @@ app.get('/auth', (req, res) => {
 
                         if(d.action === 'success') {
                             log("AUTORYZACJA: ZATWIERDZONO.");
-                            document.getElementById('box').innerHTML = '<h1>ZWERYFIKOWANO</h1><p>Witaj w systemie, Misiu.</p>';
+                            document.getElementById('box').innerHTML = '<h1>ZWERYFIKOWANO</h1><p>Witaj w systemie.</p>';
                         } else if(d.action === 'wait') {
                             log("ANOMALIA: OCZEKIWANIE NA DECYZJĘ ADMINA...");
                             document.getElementById('status-area').innerHTML = '<h2 style="color: #fbbf24; animation: pulse 1s infinite; font-family:Orbitron;">PENDING_REVIEW</h2>';
@@ -151,11 +151,29 @@ app.get('/auth', (req, res) => {
     `);
 });
 
-// Reszta kodu logiki adminów i serwera pozostaje bez zmian (axios, mongoose itd.)
-// Pamiętaj tylko o używaniu zmiennej DOMAIN przy wysyłaniu linków weryfikacyjnych przez bota!
+// --- POWITANIE I WYSYŁANIE LINKU (PO NOWEJ DOMENIE) ---
+client.on('guildMemberAdd', async (member) => {
+    try {
+        const embed = new EmbedBuilder()
+            .setTitle('ICARUS SYSTEM | Protokół Weryfikacji')
+            .setDescription(`Witaj <@${member.id}>.\n\nAby uzyskać dostęp do sektora, musisz przejść autoryzację sprzętową.`)
+            .setColor('#5865f2')
+            .addFields({ name: '🔗 Link Autoryzacyjny', value: `${DOMAIN}/auth?token=${member.id}` })
+            .setFooter({ text: 'Link wygaśnie po pomyślnej weryfikacji.' });
 
-// Przykład wysyłania linku przez bota w Twojej komendzie powitalnej/weryfikacyjnej:
-// member.send(`Weryfikacja: ${DOMAIN}/auth?token=${member.id}`);
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setLabel('INICJUJ PROTOKÓŁ')
+                .setURL(`${DOMAIN}/auth?token=${member.id}`)
+                .setStyle(ButtonStyle.Link)
+        );
+
+        await member.send({ embeds: [embed], components: [row] });
+        console.log(`> Wysłano link weryfikacyjny do: ${member.user.tag}`);
+    } catch (e) {
+        console.log(`> Nie można wysłać DM do ${member.user.tag}.`);
+    }
+});
 
 // --- LOGIKA POWIADOMIEŃ ADMINÓW ---
 async function sendAdminLogs(targetId, ip, country, operator, type, isAuto = false) {
@@ -195,7 +213,7 @@ async function updateAdminLogs(targetId, adminUser, action, reason = "") {
             const admin = await client.users.fetch(msgRef.adminId);
             const dm = await admin.createDM();
             const message = await dm.messages.fetch(msgRef.messageId);
-            const statusText = action === 'accept' ? `✅ ZAATWIERDZONO: <@${adminUser.id}>` : `❌ ODRZUCONO: <@${adminUser.id}>\nPowód: ${reason}`;
+            const statusText = action === 'accept' ? `✅ ZATWIERDZONO: <@${adminUser.id}>` : `❌ ODRZUCONO: <@${adminUser.id}>\nPowód: ${reason}`;
             const newEmbed = EmbedBuilder.from(message.embeds[0]).setColor(action === 'accept' ? '#43b581' : '#f04747').setDescription(statusText);
             await message.edit({ embeds: [newEmbed], components: [] });
         } catch (e) {}
@@ -232,7 +250,7 @@ client.on('interactionCreate', async (i) => {
     }
 });
 
-// --- LOGIKA KOŃCOWA ---
+// --- LOGIKA SERWERA ---
 app.get('/status', async (req, res) => {
     const doc = await RequestTracker.findOne({ userId: req.query.userId });
     res.json({ status: doc ? doc.status : 'pending', reason: doc ? doc.reason : '' });
@@ -265,5 +283,9 @@ app.post('/complete', async (req, res) => {
     } catch (e) { res.json({ action: 'error', msg: 'System Error.' }); }
 });
 
+client.once('ready', () => {
+    console.log(`🤖 Bot zalogowany jako ${client.user.tag}`);
+});
+
 client.login(BOT_TOKEN);
-app.listen(process.env.PORT || 3000);
+app.listen(process.env.PORT || 3000, () => console.log("🌐 Server is running"));
