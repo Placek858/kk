@@ -12,36 +12,29 @@ const MongoStore = require('connect-mongo');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.DirectMessages] });
 const app = express();
+app.set('trust proxy', 1);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-mongoose.connect(process.env.MONGO_URI);
+// Obsługa błędów połączenia bazy
+mongoose.connect(process.env.MONGO_URI).catch(err => console.error("BŁĄD MONGO:", err));
 
-// --- SCHEMATY ---
 const GuildConfig = mongoose.model('GuildConfig', new mongoose.Schema({
-    guildId: String,
-    verifyRoleId: String,
-    logChannelId: String,
-    lang: { type: String, default: 'en' },
-    admins: { type: [String], default: [] },
-    isBlocked: { type: Boolean, default: false },
-    blockReason: String
+    guildId: String, verifyRoleId: String, logChannelId: String,
+    lang: { type: String, default: 'en' }, admins: { type: [String], default: [] },
+    isBlocked: { type: Boolean, default: false }, blockReason: String
 }));
 
 const UserData = mongoose.model('UserData', new mongoose.Schema({
-    deviceId: String,
-    attempts: { type: Number, default: 5 },
-    isLocked: { type: Boolean, default: false },
-    verifiedAccounts: { type: [String], default: [] }
+    deviceId: String, attempts: { type: Number, default: 5 },
+    isLocked: { type: Boolean, default: false }, verifiedAccounts: { type: [String], default: [] }
 }));
 
-// --- SESJA I AUTH ---
 app.use(session({
-    secret: 'icarus_pro_v3',
-    resave: true,
-    saveUninitialized: true,
+    secret: 'icarus_ultra_secret_2026',
+    resave: false, saveUninitialized: false,
     store: MongoStore.create({ mongoUrl: process.env.MONGO_URI }),
-    cookie: { maxAge: 1000 * 60 * 60 * 24 }
+    cookie: { secure: process.env.DOMAIN.includes('https'), maxAge: 24 * 60 * 60 * 1000 }
 }));
 
 passport.use(new Strategy({
@@ -56,101 +49,93 @@ passport.deserializeUser((o, d) => d(null, o));
 app.use(passport.initialize());
 app.use(passport.session());
 
-// --- TRANSLACJE ---
-const translations = {
-    pl: {
-        verify: "Weryfikacja Konta", manage: "Panel Zarządzania", owner: "Panel Właściciela Systemu",
-        save: "Zapisz Zmiany", unsaved: "Masz niezapisane zmiany!", success: "Zmiany zapisane!",
-        fail: "Wystąpił błąd!", blocked: "SERWER ZABLOKOWANY", contact: "Kontakt: icarus.system.pl@gmail.com",
-        pin_err: "PIN nieprawidłowy! Pozostało prób: ", select: "Wybierz serwer", online: "Działa", offline: "Offline",
-        add: "Dodaj Bota", block_btn: "ZABLOKUJ", reason: "Powód blokady"
-    },
-    en: {
-        verify: "Account Verification", manage: "Management Panel", owner: "System Owner Panel",
-        save: "Save Changes", unsaved: "Unsaved changes detected!", success: "Changes saved!",
-        fail: "An error occurred!", blocked: "SERVER BLOCKED", contact: "Contact: icarus.system.pl@gmail.com",
-        pin_err: "Invalid PIN! Attempts left: ", select: "Select server", online: "Online", offline: "Offline",
-        add: "Add Bot", block_btn: "BLOCK", reason: "Block reason"
-    }
+const i18n = {
+    pl: { verify: "Weryfikacja", manage: "Zarządzaj", owner: "System Centralny", save: "Zatwierdź zmiany", unsaved: "Wykryto niezapisane dane", block: "BLOKADA SYSTEMOWA", success: "Operacja pomyślna" },
+    en: { verify: "Verification", manage: "Dashboard", owner: "Central System", save: "Save changes", unsaved: "Unsaved changes detected", block: "SYSTEM BLOCK", success: "Success" }
 };
 
-// --- SILNIK UI (APPLE STYLE) ---
-const render = (content, lang = 'en', state = { hasForm: false }) => {
-    const t = translations[lang] || translations.en;
+const renderUI = (content, lang = 'en', state = { hasForm: false }) => {
+    const t = i18n[lang] || i18n.en;
+    // POPRAWKA: Zmiana sposobu renderowania ikon, aby uniknąć błędów JS na stronie
     return `
 <!DOCTYPE html>
 <html lang="${lang}">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;700&display=swap');
-        :root { --blue: #0071e3; --bg: #ffffff; --text: #1d1d1f; --card: #f5f5f7; --neon: #00f2ff; }
-        body.dark { --bg: #0b0b0b; --text: #f5f5f7; --card: #1c1c1e; --neon: #bf00ff; }
-        body { background: var(--bg); color: var(--text); font-family: 'Plus Jakarta Sans', sans-serif; transition: 0.5s; margin: 0; overflow-x: hidden; }
-        .nav { position: fixed; top: 0; width: 100%; padding: 30px 50px; display: flex; justify-content: space-between; box-sizing: border-box; z-index: 1000; }
-        .lang a { text-decoration: none; color: var(--text); font-weight: 700; margin-right: 15px; opacity: 0.3; }
-        .lang a.active { opacity: 1; border-bottom: 2px solid var(--blue); }
-        .theme-ico { font-size: 32px; cursor: pointer; filter: drop-shadow(0 0 10px var(--neon)); transition: 0.3s; }
-        .container { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 100px 20px; }
-        .card { background: var(--card); padding: 50px; border-radius: 40px; width: 100%; max-width: 500px; text-align: center; box-shadow: 0 40px 100px rgba(0,0,0,0.1); }
-        .btn { display: flex; align-items: center; justify-content: center; padding: 18px; border-radius: 16px; background: var(--blue); color: white; text-decoration: none; font-weight: 700; border: none; cursor: pointer; margin: 10px 0; width: 100%; transition: 0.3s; font-size: 16px; }
-        .btn-alt { background: transparent; border: 2px solid var(--blue); color: var(--text); }
-        input, select { width: 100%; padding: 16px; border-radius: 12px; border: 1px solid rgba(128,128,128,0.2); background: var(--bg); color: var(--text); margin-bottom: 15px; box-sizing: border-box; }
-        .row-item { display: flex; justify-content: space-between; align-items: center; background: rgba(128,128,128,0.1); padding: 12px 20px; border-radius: 14px; margin-bottom: 8px; }
-        .x-btn { color: #ff3b30; text-decoration: none; font-weight: 800; font-size: 18px; cursor: pointer; }
-        .u-bar { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); background: var(--blue); color: white; padding: 15px 40px; border-radius: 50px; display: none; align-items: center; gap: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.3); z-index: 2000; }
-        .loader { border: 3px solid #f3f3f3; border-top: 3px solid var(--blue); border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; display: none; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
+        :root { --accent: #007aff; --bg: #f5f5f7; --text: #1d1d1f; --glass: rgba(255, 255, 255, 0.7); }
+        body.dark-mode { --bg: #000000; --text: #ffffff; --glass: rgba(28, 28, 30, 0.7); --accent: #0a84ff; }
+        body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; margin: 0; transition: 0.8s cubic-bezier(0.4, 0, 0.2, 1); }
+        .navbar { position: fixed; top: 0; width: 100%; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; z-index: 1000; backdrop-filter: blur(20px); box-sizing: border-box; }
+        .lang-btn { text-decoration: none; color: var(--text); font-size: 13px; font-weight: 600; opacity: 0.4; margin-right: 15px; transition: 0.3s; }
+        .lang-btn.active { opacity: 1; color: var(--accent); }
+        .neon-toggle { cursor: pointer; font-size: 24px; transition: 0.5s; filter: drop-shadow(0 0 8px var(--accent)); }
+        .hero { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at center, rgba(0,122,255,0.05) 0%, transparent 70%); }
+        .glass-card { background: var(--glass); backdrop-filter: blur(40px); border: 1px solid rgba(255,255,255,0.1); padding: 60px; border-radius: 40px; width: 100%; max-width: 450px; text-align: center; box-shadow: 0 40px 80px rgba(0,0,0,0.1); animation: slideUp 1s ease; }
+        @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .btn-prime { background: var(--accent); color: white; border: none; padding: 18px 30px; border-radius: 18px; font-weight: 700; font-size: 16px; cursor: pointer; width: 100%; margin: 10px 0; display: inline-block; text-decoration: none; transition: 0.3s; box-shadow: 0 10px 20px rgba(0,122,255,0.3); }
+        .btn-prime:hover { transform: scale(1.02); box-shadow: 0 15px 30px rgba(0,122,255,0.4); }
+        .btn-sec { background: rgba(128,128,128,0.1); color: var(--text); text-decoration: none; padding: 18px; border-radius: 18px; display: block; font-weight: 600; transition: 0.3s; }
+        input, select { width: 100%; padding: 16px; border-radius: 14px; border: 1px solid rgba(128,128,128,0.2); background: transparent; color: var(--text); margin-bottom: 15px; box-sizing: border-box; font-size: 15px; }
+        .status-bar { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: var(--accent); color: white; padding: 12px 30px; border-radius: 100px; display: none; align-items: center; gap: 15px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
+        .loader { border: 2px solid #fff; border-top: 2px solid transparent; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; display: none; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
-<body class="\${localStorage.getItem('mode') || ''}">
-    <div class="nav">
-        <div class="lang">
-            <a href="?lang=pl" class="\${'${lang}'==='pl'?'active':''}">🇵🇱 Polski</a>
-            <a href="?lang=en" class="\${'${lang}'==='en'?'active':''}">🇬🇧 English</a>
+<body class="\${localStorage.getItem('theme') || ''}">
+    <div class="navbar">
+        <div>
+            <a href="?lang=pl" class="lang-btn \${'${lang}'==='pl'?'active':''}">🇵🇱 POLSKI</a>
+            <a href="?lang=en" class="lang-btn \${'${lang}'==='en'?'active':''}">🇬🇧 ENGLISH</a>
         </div>
-        <div class="theme-ico" onclick="tgl()">\${localStorage.getItem('mode') === 'dark' ? '🔮' : '💡'}</div>
+        <div class="neon-toggle" id="themeIco" onclick="toggleTheme()"></div>
     </div>
-    <div class="container">${content}</div>
-    <div id="u-bar" class="u-bar">
+    <div class="hero">${content}</div>
+    <div id="u-bar" class="status-bar">
         <span>${t.unsaved}</span>
-        <button class="btn" style="width:auto; padding:8px 25px; background:white; color:black; margin:0;" onclick="send()">
-            <div id="ld" class="loader"></div> ${t.save}
+        <button class="btn-prime" style="width:auto; padding:8px 20px; margin:0;" onclick="saveData()">
+            <div id="loader" class="loader"></div> ${t.save}
         </button>
     </div>
     <script>
-        function tgl() {
-            const b = document.body;
-            b.classList.toggle('dark');
-            localStorage.setItem('mode', b.classList.contains('dark') ? 'dark' : 'light');
-            location.reload();
+        const body = document.body;
+        const ico = document.getElementById('themeIco');
+        const updateIco = () => ico.innerText = body.classList.contains('dark-mode') ? '🔮' : '💡';
+        updateIco();
+        function toggleTheme() {
+            body.classList.toggle('dark-mode');
+            localStorage.setItem('theme', body.classList.contains('dark-mode') ? 'dark-mode' : '');
+            updateIco();
         }
-        function send() {
-            document.getElementById('ld').style.display = 'inline-block';
-            setTimeout(() => document.forms[0].submit(), 2500);
+        function saveData() {
+            document.getElementById('loader').style.display = 'block';
+            setTimeout(() => document.forms[0].submit(), 2000);
         }
         if(${state.hasForm}) {
-            document.querySelectorAll('input, select').forEach(i => i.oninput = () => document.getElementById('u-bar').style.display = 'flex');
+            document.querySelectorAll('input, select, textarea').forEach(el => {
+                el.oninput = () => document.getElementById('u-bar').style.display = 'flex';
+            });
         }
     </script>
 </body>
 </html>`;
 };
 
-// --- [STRONA GŁÓWNA] ---
+// --- ROUTES ---
 app.get('/', (req, res) => {
     const l = req.query.lang || 'en';
-    res.send(render(`
-        <div class="card">
-            <h1 style="font-size: 60px; margin: 0; letter-spacing: -4px;">Icarus</h1>
-            <p style="opacity:0.4; margin-bottom: 50px;">Corporate Security Solutions</p>
-            <a href="/login?target=select-srv&lang=${l}" class="btn">${translations[l].verify}</a>
-            <a href="/login?target=dashboard&lang=${l}" class="btn btn-alt">${translations[l].manage}</a>
-            <a href="/owner-auth?lang=${l}" class="btn" style="background:none; color:gray; font-size:12px; margin-top:40px;">${translations[l].owner}</a>
+    res.send(renderUI(`
+        <div class="glass-card">
+            <h1 style="font-size: 50px; font-weight: 800; letter-spacing: -2px; margin: 0;">ICARUS</h1>
+            <p style="opacity: 0.5; margin-bottom: 40px; font-weight: 300;">NEXT-GEN SECURITY INTERFACE</p>
+            <a href="/login?target=select-srv&lang=${l}" class="btn-prime">${i18n[l].verify}</a>
+            <a href="/login?target=dashboard&lang=${l}" class="btn-sec">${i18n[l].manage}</a>
+            <a href="/owner-gate?lang=${l}" style="display:block; margin-top:30px; color:gray; text-decoration:none; font-size:12px;">SYSTEM ACCESS</a>
         </div>`, l));
 });
 
-// --- [AUTORYZACJA] ---
 app.get('/login', (req, res, next) => {
     const state = Buffer.from(JSON.stringify({ t: req.query.target, l: req.query.lang })).toString('base64');
     passport.authenticate('discord', { state })(req, res, next);
@@ -158,197 +143,161 @@ app.get('/login', (req, res, next) => {
 
 app.get('/auth/callback', passport.authenticate('discord', { failureRedirect: '/' }), (req, res) => {
     const state = JSON.parse(Buffer.from(req.query.state, 'base64').toString());
-    res.redirect(`/${state.t}?lang=${state.l || 'en'}`);
+    res.redirect(`/${state.t}?lang=${state.l}`);
 });
 
-// --- [WERYFIKACJA - WYBÓR] ---
-app.get('/select-srv', async (req, res) => {
-    if(!req.isAuthenticated()) return res.redirect('/');
-    const l = req.query.lang || 'en';
-    const guilds = req.user.guilds.filter(g => client.guilds.cache.has(g.id));
-    const list = guilds.map(g => `<a href="/verify-final/${g.id}?lang=${l}" class="btn btn-alt">${g.name}</a>`).join('');
-    res.send(render(`<div class="card"><h2>${translations[l].select}</h2>${list}</div>`, l));
-});
-
-app.get('/verify-final/:guildId', async (req, res) => {
-    const l = req.query.lang || 'en';
-    const conf = await GuildConfig.findOne({ guildId: req.params.guildId });
-    if(conf?.isBlocked) return res.send(render(`<div class="card"><h1 style="color:#ff3b30;">${translations[l].blocked}</h1><p>${conf.blockReason}</p><p style="margin-top:30px; font-size:12px; opacity:0.5;">${translations[l].contact}</p></div>`, l));
-    res.send(render(`<div class="card"><h2>${translations[l].verify}</h2><form action="/proc-v/${req.params.guildId}?lang=${l}" method="POST"><button class="btn">KLIKNIJ ABY ZWERYFIKOWAĆ</button></form></div>`, l));
-});
-
-// --- [PANEL ZARZĄDZANIA] ---
-app.get('/dashboard', async (req, res) => {
-    if(!req.isAuthenticated()) return res.redirect('/');
-    const l = req.query.lang || 'en';
-    const guilds = req.user.guilds.filter(g => (new PermissionsBitField(BigInt(g.permissions)).has(PermissionsBitField.Flags.Administrator)));
-    const list = guilds.map(g => {
-        const hasBot = client.guilds.cache.has(g.id);
-        const btn = hasBot ? `<a href="/config/${g.id}?lang=${l}" class="btn" style="width:120px;">Zarządzaj</a>` : `<a href="https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=8&scope=bot&guild_id=${g.id}" class="btn btn-alt" style="width:120px;">${translations[l].add}</a>`;
-        return `<div class="row-item"><span>${g.name}</span>${btn}</div>`;
-    }).join('');
-    res.send(render(`<div class="card"><h2>${translations[l].manage}</h2>${list}</div>`, l));
-});
-
-app.get('/config/:guildId', async (req, res) => {
-    if(!req.isAuthenticated()) return res.redirect('/');
-    const l = req.query.lang || 'en';
-    const gid = req.params.guildId;
-    const conf = await GuildConfig.findOne({ guildId: gid }) || new GuildConfig({ guildId: gid });
-    const admins = conf.admins.map(id => `<div class="row-item"><span>${id}</span><a href="/del-adm/${gid}/${id}?lang=${l}" class="x-btn">×</a></div>`).join('');
-    res.send(render(`
-        <div class="card" style="text-align:left;">
-            <h3>Ustawienia Serwera</h3>
-            <form action="/save/${gid}?lang=${l}" method="POST">
-                <label>${translations[l].bot_lang}</label>
-                <select name="lang"><option value="pl" ${conf.lang==='pl'?'selected':''}>Polski</option><option value="en" ${conf.lang==='en'?'selected':''}>English</option><option value="de">Deutsch</option><option value="fr">Français</option><option value="es">Español</option></select>
-                <label>ID Kanału Logów</label><input name="logId" value="${conf.logChannelId || ''}">
-                <label>ID Roli Weryfikacji</label><input name="roleId" value="${conf.verifyRoleId || ''}">
-                <hr style="opacity:0.1; margin:20px 0;">
-                <h4>${translations[l].admin_list}</h4>
-                ${admins}
-                <input name="newAdmin" placeholder="ID użytkownika..." style="margin-top:10px;">
-                <button class="btn">${translations[l].save}</button>
-            </form>
-        </div>`, l, { hasForm: true }));
-});
-
-// --- [PANEL WŁAŚCICIELA SYSTEMU] ---
-app.get('/owner-auth', async (req, res) => {
+// --- OWNER PANEL (NAPRAWIONE PRZEKIEROWANIA) ---
+app.get('/owner-gate', async (req, res) => {
     const l = req.query.lang || 'en';
     const dev = await UserData.findOne({ deviceId: req.ip });
-    if(dev?.isLocked) return res.send(render(`<h1 style="color:red;">LOCKED</h1><p>Dostęp zablokowany dla tego urządzenia.</p>`, l));
-    res.send(render(`
-        <div class="card">
-            <h2>System Owner PIN</h2>
-            <form action="/owner-verify" method="POST">
-                <input type="password" name="pin" style="text-align:center; font-size:30px; letter-spacing:10px;">
-                <button class="btn">WEJDŹ</button>
+    if(dev?.isLocked) return res.send(renderUI(`<h1>ACCESS DENIED</h1><p>Device restricted.</p>`, l));
+    res.send(renderUI(`
+        <div class="glass-card">
+            <h2>Authorized Access Only</h2>
+            <form action="/owner-login?lang=${l}" method="POST">
+                <input type="password" name="pin" placeholder="••••••••" style="text-align:center; font-size:24px; letter-spacing:8px;">
+                <button class="btn-prime">UNLOCK SYSTEM</button>
             </form>
-            <p style="color:red">${dev ? translations[l].pin_err + dev.attempts : ''}</p>
+            ${dev?.attempts < 5 ? `<p style="color:#ff3b30;">${i18n[l].pin_err} ${dev.attempts}</p>` : ''}
         </div>`, l));
 });
 
-app.post('/owner-verify', async (req, res) => {
-    const { pin } = req.body;
-    let dev = await UserData.findOne({ deviceId: req.ip }) || new UserData({ deviceId: req.ip });
-    if(pin === "15052021") {
-        dev.attempts = 5; await dev.save();
-        req.session.master = true; // Zmienna sesji niezależna od Discorda
-        res.redirect('/owner-panel?lang=' + (req.query.lang || 'en'));
-    } else {
-        dev.attempts -= 1;
-        if(dev.attempts <= 0) {
-            dev.isLocked = true;
-            const owner = await client.users.fetch(process.env.OWNER_ID);
-            const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`unl_${req.ip.replace(/\./g,'_')}`).setLabel("ODBLOKUJ").setStyle(ButtonStyle.Success));
-            owner.send({ content: `🚨 **WŁAMANIE!** IP: ${req.ip}`, components: [row] });
-        }
-        await dev.save();
-        res.redirect('/owner-auth?lang=' + (req.query.lang || 'en'));
+app.post('/owner-login', async (req, res) => {
+    const l = req.query.lang || 'en';
+    if(req.body.pin === "15052021") {
+        req.session.master = true;
+        return res.redirect(`/owner-panel?lang=${l}`);
     }
+    let dev = await UserData.findOne({ deviceId: req.ip }) || new UserData({ deviceId: req.ip });
+    dev.attempts -= 1;
+    if(dev.attempts <= 0) dev.isLocked = true;
+    await dev.save();
+    res.redirect(`/owner-gate?lang=${l}`);
 });
 
 app.get('/owner-panel', async (req, res) => {
-    if(!req.session.master) return res.redirect('/owner-auth');
+    if(!req.session.master) return res.redirect('/owner-gate');
     const l = req.query.lang || 'en';
     const list = client.guilds.cache.map(g => `
-        <div class="row-item">
-            <span><div style="width:10px; height:10px; background:#34c759; border-radius:50%; display:inline-block; margin-right:8px;"></div> ${g.name}</span>
-            <div style="display:flex; gap:10px;">
-                <a href="/config/${g.id}?lang=${l}" class="btn" style="width:auto; margin:0; padding:5px 15px;">Zarządzaj</a>
-                <a href="/owner-block/${g.id}?lang=${l}" class="btn" style="width:auto; margin:0; padding:5px 15px; background:#ff3b30;">X</a>
+        <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(128,128,128,0.05); padding:15px; border-radius:15px; margin-bottom:10px;">
+            <div style="text-align:left;">
+                <div style="font-weight:700;">${g.name}</div>
+                <div style="font-size:10px; color:${g.available?'#34c759':'#8e8e93'}">● ${g.available?'ONLINE':'OFFLINE'}</div>
+            </div>
+            <div style="display:flex; gap:8px;">
+                <a href="/config/${g.id}?lang=${l}&from=owner" class="btn-prime" style="width:auto; padding:8px 15px; font-size:12px; margin:0;">EDIT</a>
+                <a href="/owner-block/${g.id}?lang=${l}" class="btn-prime" style="width:auto; padding:8px 15px; font-size:12px; margin:0; background:#ff3b30;">X</a>
             </div>
         </div>`).join('');
-    res.send(render(`<div class="card"><h2>Master Owner Panel</h2>${list}</div>`, l));
+    res.send(renderUI(`<div class="glass-card"><h3>Global Infrastructure</h3>${list}</div>`, l));
 });
 
-// --- [LOGIKA BLOKADY Z FORMULARZEM] ---
-app.get('/owner-block/:guildId', async (req, res) => {
-    if(!req.session.master) return res.redirect('/');
-    const l = req.query.lang || 'en';
-    res.send(render(`
-        <div class="card">
-            <h3>Blokowanie: ${client.guilds.cache.get(req.params.guildId)?.name}</h3>
-            <form action="/owner-block-exec/${req.params.guildId}?lang=${l}" method="POST">
-                <textarea name="reason" class="input-box" placeholder="${translations[l].reason}" required style="height:100px;"></textarea>
-                <button class="btn" style="background:#ff3b30;">POTWIERDŹ BLOKADĘ</button>
-            </form>
-        </div>`, l));
-});
-
-app.post('/owner-block-exec/:guildId', async (req, res) => {
-    const { reason } = req.body;
-    const gid = req.params.guildId;
-    await GuildConfig.findOneAndUpdate({ guildId: gid }, { isBlocked: true, blockReason: reason }, { upsert: true });
+// --- DYNAMICZNA KONFIGURACJA (Obsługuje i Właściciela i Admina) ---
+app.get('/config/:guildId', async (req, res) => {
+    const isOwner = req.session.master;
+    if(!isOwner && !req.isAuthenticated()) return res.redirect('/');
     
-    // Log na kanał serwera
-    const conf = await GuildConfig.findOne({ guildId: gid });
-    const guild = client.guilds.cache.get(gid);
-    if(guild && conf?.logChannelId) {
-        const chan = guild.channels.cache.get(conf.logChannelId);
-        if(chan) chan.send(`⚠️ **SERWER ZABLOKOWANY**\nPowód: ${reason}\nKontakt: icarus.system.pl@gmail.com`);
-    }
-    res.redirect('/owner-panel?lang=' + (req.query.lang || 'en'));
+    const l = req.query.lang || 'en';
+    const gid = req.params.guildId;
+    const conf = await GuildConfig.findOne({ guildId: gid }) || new GuildConfig({ guildId: gid });
+    const admins = conf.admins.map(id => `<div style="display:flex; justify-content:space-between; padding:10px;"><span>${id}</span><a href="/del-adm/${gid}/${id}?lang=${l}" style="color:#ff3b30; text-decoration:none; font-weight:800;">×</a></div>`).join('');
+
+    res.send(renderUI(`
+        <div class="glass-card" style="text-align:left;">
+            <h2>Server Config</h2>
+            <form action="/save-config/${gid}?lang=${l}&from=${req.query.from}" method="POST">
+                <label style="font-size:12px; font-weight:700; opacity:0.5;">BOT LANGUAGE</label>
+                <select name="lang">
+                    <option value="pl" ${conf.lang==='pl'?'selected':''}>Polski</option>
+                    <option value="en" ${conf.lang==='en'?'selected':''}>English</option>
+                    <option value="de">Deutsch</option>
+                    <option value="fr">Français</option>
+                    <option value="es">Español</option>
+                </select>
+                <input name="logId" placeholder="Log Channel ID" value="${conf.logChannelId || ''}">
+                <input name="roleId" placeholder="Verified Role ID" value="${conf.verifyRoleId || ''}">
+                <div style="background:rgba(128,128,128,0.1); border-radius:15px; padding:15px; margin:15px 0;">
+                    <h4 style="margin:0 0 10px 0;">Authorized Admins</h4>
+                    ${admins}
+                    <input name="newAdmin" placeholder="Add User ID" style="margin-top:10px; font-size:12px;">
+                </div>
+                <button class="btn-prime">SAVE ARCHITECTURE</button>
+            </form>
+            <a href="${req.query.from==='owner'?'/owner-panel':'/dashboard'}?lang=${l}" style="color:gray; font-size:12px; text-decoration:none;">← Back</a>
+        </div>`, l, { hasForm: true }));
 });
 
-// --- [WERYFIKACJA - BACKEND] ---
+app.post('/save-config/:guildId', async (req, res) => {
+    const { lang, logId, roleId, newAdmin } = req.body;
+    let c = await GuildConfig.findOne({ guildId: req.params.guildId }) || new GuildConfig({ guildId: req.params.guildId });
+    c.lang = lang; c.logChannelId = logId; c.verifyRoleId = roleId;
+    if(newAdmin && !c.admins.includes(newAdmin)) c.admins.push(newAdmin);
+    await c.save();
+    res.redirect(`/config/${req.params.guildId}?lang=${req.query.lang}&from=${req.query.from}&status=ok`);
+});
+
+// --- WERYFIKACJA (PROFESJONALNE EMBEDY) ---
 app.post('/proc-v/:guildId', async (req, res) => {
     if(!req.isAuthenticated()) return res.redirect('/');
     const user = req.user;
-    const ip = req.ip;
     const guild = client.guilds.cache.get(req.params.guildId);
-    let dbUser = await UserData.findOne({ deviceId: ip }) || new UserData({ deviceId: ip });
+    const dbUser = await UserData.findOne({ deviceId: req.ip }) || new UserData({ deviceId: req.ip });
     const isMulti = dbUser.verifiedAccounts.length > 0 && !dbUser.verifiedAccounts.includes(user.id);
 
-    // TWOJE PV
+    // PROFESJONALNY LOG DLA CIEBIE
     const owner = await client.users.fetch(process.env.OWNER_ID);
-    const log = new EmbedBuilder().setTitle("📡 RAPORT Icarus").setColor(isMulti?0xff3b30:0x34c759).addFields({name:"User",value:user.username},{name:"Guild",value:guild.name},{name:"IP",value:ip},{name:"Link",value:`https://discord.com/channels/${guild.id}`});
-    const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`block_${guild.id}`).setLabel("ZABLOKUJ SERWER").setStyle(ButtonStyle.Danger));
-    owner.send({ embeds: [log], components: [row] });
+    const ownerEmbed = new EmbedBuilder()
+        .setAuthor({ name: "Icarus Security Central", iconURL: client.user.displayAvatarURL() })
+        .setTitle("🚨 Security Intelligence Report")
+        .setColor(isMulti ? 0xff3b30 : 0x007aff)
+        .addFields(
+            { name: "👤 Subject", value: `**${user.username}** (${user.id})`, inline: true },
+            { name: "🏢 Terminal", value: `**${guild.name}**`, inline: true },
+            { name: "🌐 Network ID", value: `\`${req.ip}\``, inline: true },
+            { name: "⚠️ Risk Level", value: isMulti ? "CRITICAL (Multi-account)" : "LOW (Verified)" }
+        )
+        .setFooter({ text: `System Trace ID: ${Date.now()}` })
+        .setTimestamp();
 
-    // KANAŁ LOGÓW
+    const ownerRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`block_${guild.id}`).setLabel("BLOCK SERVER").setStyle(ButtonStyle.Danger)
+    );
+    owner.send({ embeds: [ownerEmbed], components: [ownerRow] });
+
+    // LOG DLA SERWERA
     const conf = await GuildConfig.findOne({ guildId: guild.id });
     if(conf?.logChannelId) {
         const chan = guild.channels.cache.get(conf.logChannelId);
         if(chan) {
+            const sEmbed = new EmbedBuilder().setTitle("Account Validation").setColor(isMulti?0xff3b30:0x34c759).setDescription(isMulti ? `Flagged: <@${user.id}> - Potential security risk.` : `Success: <@${user.id}> has passed validation.`);
             if(isMulti) {
-                const r = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`app_${user.id}`).setLabel("Zatwierdź").setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId(`rej_${user.id}`).setLabel("Odrzuć").setStyle(ButtonStyle.Danger));
-                chan.send({ content: `⚠️ Podejrzenie multikonta: <@${user.id}>`, components: [r] });
+                const r = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId(`app_${user.id}`).setLabel("Override & Approve").setStyle(ButtonStyle.Success),
+                    new ButtonBuilder().setCustomId(`rej_${user.id}`).setLabel("Reject Access").setStyle(ButtonStyle.Danger)
+                );
+                chan.send({ embeds: [sEmbed], components: [r] });
             } else {
-                chan.send(`✅ Pomyślna weryfikacja: <@${user.id}>`);
-                const mem = await guild.members.fetch(user.id);
-                if(conf.verifyRoleId) mem.roles.add(conf.verifyRoleId);
+                chan.send({ embeds: [sEmbed] });
+                const mem = await guild.members.fetch(user.id).catch(() => null);
+                if(mem && conf.verifyRoleId) mem.roles.add(conf.verifyRoleId);
             }
         }
     }
-    dbUser.verifiedAccounts.push(user.id); await dbUser.save();
-    res.send(render(`<h1>Pomyślnie zweryfikowano!</h1>`, req.query.lang));
+    
+    if(!dbUser.verifiedAccounts.includes(user.id)) dbUser.verifiedAccounts.push(user.id);
+    await dbUser.save();
+    res.send(renderUI(`<div class="glass-card"><h1>SUCCESS</h1><p>Identity confirmed. Check Discord.</p></div>`, req.query.lang));
 });
 
-// --- POMOCNICZE ---
-app.post('/save/:gid', async (req, res) => {
-    const { lang, logId, roleId, newAdmin } = req.body;
-    let c = await GuildConfig.findOne({ guildId: req.params.gid }) || new GuildConfig({ guildId: req.params.gid });
-    c.lang = lang; c.logChannelId = logId; c.verifyRoleId = roleId;
-    if(newAdmin && !c.admins.includes(newAdmin)) c.admins.push(newAdmin);
-    await c.save();
-    res.redirect(`/config/${req.params.gid}?lang=${req.query.lang || 'en'}`);
-});
-
-app.get('/del-adm/:gid/:uid', async (req, res) => {
-    await GuildConfig.updateOne({ guildId: req.params.gid }, { $pull: { admins: req.params.uid } });
-    res.redirect(`/config/${req.params.gid}?lang=${req.query.lang || 'en'}`);
-});
-
+// --- INTERAKCJE (UNLOKOWANIE PINU I BLOKADY) ---
 client.on('interactionCreate', async i => {
     if(i.isButton() && i.customId.startsWith('unl_')) {
         const ip = i.customId.split('_').slice(1).join('.').replace(/_/g,'.');
         await UserData.findOneAndUpdate({ deviceId: ip }, { isLocked: false, attempts: 1 });
-        await i.reply({ content: `PIN: **15052021** (Zniknie za 10s)`, ephemeral: true });
+        await i.reply({ content: `PIN: **15052021** (Auto-delete in 10s)`, ephemeral: true });
         setTimeout(() => i.deleteReply(), 10000);
     }
 });
 
-client.login(process.env.DISCORD_TOKEN);
+client.login(process.env.DISCORD_TOKEN).catch(err => console.error("FATAL: INVALID TOKEN"));
 app.listen(process.env.PORT || 3000);
